@@ -52,9 +52,17 @@ struct PopoverView: View {
     @ViewBuilder
     private var mainContent: some View {
         if let error = model.errorMessage, model.usage == nil {
-            Label(error, systemImage: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
-                .font(.callout)
+            VStack(alignment: .leading, spacing: 6) {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .font(.callout)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(tr("ClaudeBar reuses your Claude Code login. Open Claude Code, run any prompt, then press ↻ here.",
+                        "ClaudeBar dùng phiên đăng nhập của Claude Code. Mở Claude Code, chạy một lệnh bất kỳ, rồi bấm ↻ ở đây."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
 
         if let usage = model.usage {
@@ -101,6 +109,7 @@ struct PopoverView: View {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
                     .font(.caption)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
