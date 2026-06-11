@@ -146,15 +146,17 @@ final class UsageModel: ObservableObject {
         else { return nil }
         let rateText = String(format: "%.1f%%/h", rate)
         guard rate > 0.5 else {
-            return ("Burn rate ~\(rateText) — steady", false)
+            return (tr("Burn rate ~\(rateText) — steady", "Burn rate ~\(rateText) — ổn định"), false)
         }
         let hoursTo100 = (100 - current) / rate
         let hitDate = Date().addingTimeInterval(hoursTo100 * 3600)
         if hitDate < resets {
             let time = hitDate.formatted(date: .omitted, time: .shortened)
-            return ("Burn rate \(rateText) → hits 100% at ~\(time)", true)
+            return (tr("Burn rate \(rateText) → hits 100% at ~\(time)",
+                       "Burn rate \(rateText) → chạm 100% lúc ~\(time)"), true)
         }
-        return ("Burn rate \(rateText) — safe until reset", false)
+        return (tr("Burn rate \(rateText) — safe until reset",
+                   "Burn rate \(rateText) — an toàn tới giờ reset"), false)
     }
 
     static func percentText(_ value: Double?) -> String {
@@ -193,7 +195,8 @@ final class UsageModel: ObservableObject {
                 throw UsageError.message("Invalid response")
             }
             if http.statusCode == 401 {
-                throw UsageError.message("Token expired — open Claude Code to refresh it")
+                throw UsageError.message(tr("Token expired — open Claude Code to refresh it",
+                                            "Token hết hạn — mở Claude Code để làm mới"))
             }
             if http.statusCode == 429 {
                 // Routine: Claude Code shares this endpoint's quota. Skip
@@ -204,7 +207,8 @@ final class UsageModel: ObservableObject {
                 return
             }
             guard http.statusCode == 200 else {
-                throw UsageError.message("API error HTTP \(http.statusCode)")
+                throw UsageError.message(tr("API error HTTP \(http.statusCode)",
+                                            "API lỗi HTTP \(http.statusCode)"))
             }
             let previous = usage
             let fresh = try JSONDecoder().decode(UsageResponse.self, from: data)
@@ -238,16 +242,19 @@ final class UsageModel: ObservableObject {
         if let old = previous.fiveHour?.utilization,
            let new = current.fiveHour?.utilization,
            old >= 30, new < old - 25 {
-            Notifier.push(title: "Session limit reset 🎉",
-                          body: "Usage is back to \(Int(new.rounded()))% — fresh window.")
+            Notifier.push(title: tr("Session limit reset 🎉", "Session limit đã reset 🎉"),
+                          body: tr("Usage is back to \(Int(new.rounded()))% — fresh window.",
+                                   "Usage về \(Int(new.rounded()))% — cửa sổ 5h mới."))
         }
     }
 
     private func crossingAlerts(name: String, old: Double?, new: Double?) {
         guard let old, let new else { return }
         for threshold in [80.0, 95.0] where old < threshold && new >= threshold {
-            Notifier.push(title: "Claude \(name) at \(Int(new.rounded()))%",
-                          body: "Crossed the \(Int(threshold))% \(name.lowercased()) limit.")
+            Notifier.push(title: tr("Claude \(name) at \(Int(new.rounded()))%",
+                                    "Claude \(name) đạt \(Int(new.rounded()))%"),
+                          body: tr("Crossed the \(Int(threshold))% \(name.lowercased()) limit.",
+                                   "Đã vượt ngưỡng \(Int(threshold))% của \(name.lowercased()) limit."))
         }
     }
 }

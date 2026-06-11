@@ -19,9 +19,11 @@ enum KeychainTokenProvider {
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         guard status == errSecSuccess, let data = item as? Data else {
             if status == errSecItemNotFound {
-                throw UsageError.message("No Claude Code login found in Keychain")
+                throw UsageError.message(tr("No Claude Code login found in Keychain",
+                                            "Không tìm thấy đăng nhập Claude Code trong Keychain"))
             }
-            throw UsageError.message("Keychain access denied (code \(status)) — click 'Always Allow'")
+            throw UsageError.message(tr("Keychain access denied (code \(status)) — click 'Always Allow'",
+                                        "Không đọc được Keychain (mã \(status)) — bấm 'Always Allow'"))
         }
 
         guard
@@ -29,7 +31,8 @@ enum KeychainTokenProvider {
             let oauth = json["claudeAiOauth"] as? [String: Any],
             let token = oauth["accessToken"] as? String, !token.isEmpty
         else {
-            throw UsageError.message("Unexpected Keychain data format")
+            throw UsageError.message(tr("Unexpected Keychain data format",
+                                        "Dữ liệu Keychain sai định dạng"))
         }
 
         var expires: Date?

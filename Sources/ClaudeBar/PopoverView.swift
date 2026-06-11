@@ -6,6 +6,7 @@ struct PopoverView: View {
     @ObservedObject var model: UsageModel
     @ObservedObject var agents: AgentMonitor
     @ObservedObject var tokens: TokenStats
+    @ObservedObject private var l10n = L10n.shared
     @State private var showingSettings = false
 
     var body: some View {
@@ -25,7 +26,7 @@ struct PopoverView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Text(showingSettings ? "Settings" : "Claude Usage")
+            Text(showingSettings ? tr("Settings", "Cài đặt") : "Claude Usage")
                 .font(.headline)
             if !showingSettings, let plan = model.subscriptionType {
                 Text(plan.capitalized)
@@ -42,7 +43,7 @@ struct PopoverView: View {
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.borderless)
-            .help(showingSettings ? "Back" : "Settings")
+            .help(showingSettings ? tr("Back", "Quay lại") : tr("Settings", "Cài đặt"))
         }
     }
 
@@ -73,8 +74,9 @@ struct PopoverView: View {
 
     private func limitsSection(_ usage: UsageResponse) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionHeader("Limits")
-            UsageRow(title: "Current session", bucket: usage.fiveHour, resetStyle: .relative)
+            SectionHeader(tr("Limits", "Giới hạn"))
+            UsageRow(title: tr("Current session", "Session hiện tại"),
+                     bucket: usage.fiveHour, resetStyle: .relative)
             if let forecast = model.sessionForecast {
                 Label(forecast.text, systemImage: forecast.isWarning
                       ? "flame.fill" : "gauge.with.dots.needle.33percent")
@@ -82,12 +84,15 @@ struct PopoverView: View {
                     .foregroundStyle(forecast.isWarning ? Color.orange : Color.secondary)
                     .padding(.top, -6)
             }
-            UsageRow(title: "Weekly · All models", bucket: usage.sevenDay, resetStyle: .absolute)
+            UsageRow(title: tr("Weekly · All models", "Tuần · mọi model"),
+                     bucket: usage.sevenDay, resetStyle: .absolute)
             if let sonnet = usage.sevenDaySonnet, sonnet.utilization != nil {
-                UsageRow(title: "Weekly · Sonnet", bucket: sonnet, resetStyle: .absolute)
+                UsageRow(title: tr("Weekly · Sonnet", "Tuần · Sonnet"),
+                         bucket: sonnet, resetStyle: .absolute)
             }
             if let opus = usage.sevenDayOpus, opus.utilization != nil {
-                UsageRow(title: "Weekly · Opus", bucket: opus, resetStyle: .absolute)
+                UsageRow(title: tr("Weekly · Opus", "Tuần · Opus"),
+                         bucket: opus, resetStyle: .absolute)
             }
             if let extra = usage.extraUsage, extra.isEnabled == true {
                 extraUsageRow(extra)
@@ -107,10 +112,10 @@ struct PopoverView: View {
         if points.count >= 3 {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 10) {
-                    SectionHeader("Last 24h")
+                    SectionHeader(tr("Last 24h", "24h qua"))
                     Spacer()
                     LegendDot(color: .green, label: "Session")
-                    LegendDot(color: .blue, label: "Weekly")
+                    LegendDot(color: .blue, label: tr("Weekly", "Tuần"))
                 }
                 Chart(points) { sample in
                     if let v = sample.s {
@@ -146,7 +151,8 @@ struct PopoverView: View {
 
     private var agentsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            SectionHeader("Agents running (\(agents.agents.count))")
+            SectionHeader(tr("Agents running (\(agents.agents.count))",
+                             "Agent đang chạy (\(agents.agents.count))"))
             ForEach(agents.agents) { agent in
                 HStack(spacing: 8) {
                     Circle()
@@ -160,7 +166,7 @@ struct PopoverView: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Spacer()
-                    Text(agent.isBusy ? "working" : "idle")
+                    Text(agent.isBusy ? tr("working", "đang chạy") : tr("idle", "chờ"))
                         .font(.caption)
                         .foregroundStyle(agent.isBusy ? Color.green : Color.secondary)
                 }
@@ -172,12 +178,13 @@ struct PopoverView: View {
     private func todaySection(_ today: DayUsage) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                SectionHeader("Today · Claude Code")
+                SectionHeader(tr("Today · Claude Code", "Hôm nay · Claude Code"))
                 Spacer()
-                Text("≈ $\(today.cost, specifier: "%.2f") API value")
+                Text("≈ $\(today.cost, specifier: "%.2f") \(tr("API value", "giá API"))")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .help("What today's usage would cost at API list prices — not a charge")
+                    .help(tr("What today's usage would cost at API list prices — not a charge",
+                             "Quy đổi theo giá niêm yết API để tham khảo — không phải tiền bị trừ"))
             }
             HStack(spacing: 12) {
                 TokenStat(label: "in", value: today.input)
@@ -206,7 +213,7 @@ struct PopoverView: View {
                     }
                 }
                 .frame(height: 44)
-                Text("7 days ≈ $\(tokens.weekCost, specifier: "%.2f")")
+                Text("\(tr("7 days", "7 ngày")) ≈ $\(tokens.weekCost, specifier: "%.2f")")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -231,7 +238,7 @@ struct PopoverView: View {
     private var footer: some View {
         HStack {
             if let updated = model.lastUpdated {
-                Text("Updated \(updated.formatted(date: .omitted, time: .standard))")
+                Text("\(tr("Updated", "Cập nhật")) \(updated.formatted(date: .omitted, time: .standard))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -242,7 +249,7 @@ struct PopoverView: View {
                 Image(systemName: "arrow.clockwise")
             }
             .buttonStyle(.borderless)
-            .help("Refresh now")
+            .help(tr("Refresh now", "Refresh ngay"))
         }
     }
 }
@@ -251,22 +258,34 @@ struct PopoverView: View {
 
 struct SettingsView: View {
     @ObservedObject var model: UsageModel
+    @ObservedObject private var l10n = L10n.shared
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var intervalSelection: Double = 60
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 8) {
+                SectionHeader(tr("Language", "Ngôn ngữ"))
+                Picker("", selection: $l10n.language) {
+                    Text("English").tag(AppLanguage.en)
+                    Text("Tiếng Việt").tag(AppLanguage.vi)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
                 SectionHeader("Menu bar")
                 Toggle("Session %", isOn: $model.showSession)
-                Toggle("Weekly %", isOn: $model.showWeekly)
-                Toggle("Countdown to session reset", isOn: $model.showCountdown)
+                Toggle(tr("Weekly %", "Tuần %"), isOn: $model.showWeekly)
+                Toggle(tr("Countdown to session reset", "Đếm ngược tới reset session"),
+                       isOn: $model.showCountdown)
             }
             .font(.callout)
             .toggleStyle(.checkbox)
 
             VStack(alignment: .leading, spacing: 8) {
-                SectionHeader("Refresh interval")
+                SectionHeader(tr("Refresh interval", "Tần suất refresh"))
                 Picker("", selection: $intervalSelection) {
                     Text("1m").tag(60.0)
                     Text("2m").tag(120.0)
@@ -280,8 +299,8 @@ struct SettingsView: View {
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                SectionHeader("General")
-                Toggle("Launch at login", isOn: $launchAtLogin)
+                SectionHeader(tr("General", "Chung"))
+                Toggle(tr("Launch at login", "Khởi động cùng máy"), isOn: $launchAtLogin)
                     .font(.callout)
                     .toggleStyle(.checkbox)
                     .onChange(of: launchAtLogin) { _, enabled in
@@ -303,7 +322,7 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.tertiary)
                 Spacer()
-                Button("Quit") { NSApp.terminate(nil) }
+                Button(tr("Quit", "Thoát")) { NSApp.terminate(nil) }
                     .font(.caption)
             }
         }
@@ -391,11 +410,15 @@ struct UsageRow: View {
             let seconds = max(0, date.timeIntervalSinceNow)
             let h = Int(seconds) / 3600
             let m = (Int(seconds) % 3600) / 60
-            return h > 0 ? "Resets in \(h)h \(m)m" : "Resets in \(m)m"
+            let duration = h > 0 ? "\(h)h \(m)m" : "\(m)m"
+            return tr("Resets in \(duration)", "Reset sau \(duration)")
         case .absolute:
-            let fmt = Date.FormatStyle()
+            var fmt = Date.FormatStyle()
                 .weekday(.abbreviated).hour(.defaultDigits(amPM: .abbreviated)).minute()
-            return "Resets \(date.formatted(fmt))"
+            if L10n.shared.language == .vi {
+                fmt = fmt.locale(Locale(identifier: "vi_VN"))
+            }
+            return tr("Resets \(date.formatted(fmt))", "Reset \(date.formatted(fmt))")
         }
     }
 }
