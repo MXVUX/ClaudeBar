@@ -376,12 +376,18 @@ struct SettingsView: View {
                     Task { await updates.check(silent: false) }
                 }
                 .font(.caption)
-                if updates.state == .checking {
+                if updates.state == .checking || updates.state == .downloading {
                     ProgressView().controlSize(.small)
                 } else if let update = updates.available {
                     Text("→ \(update.version)")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.blue)
+                    Button(tr("Update now", "Cập nhật ngay")) {
+                        Task { await updates.updateNow() }
+                    }
+                    .font(.caption)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
                 } else if case .failed(let message) = updates.state {
                     Text(message).font(.caption).foregroundStyle(.red)
                 } else if updates.lastChecked != nil {
