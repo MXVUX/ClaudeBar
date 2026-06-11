@@ -146,15 +146,15 @@ final class UsageModel: ObservableObject {
         else { return nil }
         let rateText = String(format: "%.1f%%/h", rate)
         guard rate > 0.5 else {
-            return ("Burn rate ~\(rateText) — ổn định", false)
+            return ("Burn rate ~\(rateText) — steady", false)
         }
         let hoursTo100 = (100 - current) / rate
         let hitDate = Date().addingTimeInterval(hoursTo100 * 3600)
         if hitDate < resets {
             let time = hitDate.formatted(date: .omitted, time: .shortened)
-            return ("Burn rate \(rateText) → chạm 100% lúc ~\(time)", true)
+            return ("Burn rate \(rateText) → hits 100% at ~\(time)", true)
         }
-        return ("Burn rate \(rateText) — an toàn tới giờ reset", false)
+        return ("Burn rate \(rateText) — safe until reset", false)
     }
 
     static func percentText(_ value: Double?) -> String {
@@ -190,10 +190,10 @@ final class UsageModel: ObservableObject {
 
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse else {
-                throw UsageError.message("Phản hồi không hợp lệ")
+                throw UsageError.message("Invalid response")
             }
             if http.statusCode == 401 {
-                throw UsageError.message("Token hết hạn — hãy mở Claude Code để làm mới")
+                throw UsageError.message("Token expired — open Claude Code to refresh it")
             }
             if http.statusCode == 429 {
                 // Routine: Claude Code shares this endpoint's quota. Skip
@@ -204,7 +204,7 @@ final class UsageModel: ObservableObject {
                 return
             }
             guard http.statusCode == 200 else {
-                throw UsageError.message("API lỗi HTTP \(http.statusCode)")
+                throw UsageError.message("API error HTTP \(http.statusCode)")
             }
             let previous = usage
             let fresh = try JSONDecoder().decode(UsageResponse.self, from: data)
@@ -238,16 +238,16 @@ final class UsageModel: ObservableObject {
         if let old = previous.fiveHour?.utilization,
            let new = current.fiveHour?.utilization,
            old >= 30, new < old - 25 {
-            Notifier.push(title: "Session limit đã reset 🎉",
-                          body: "Usage về \(Int(new.rounded()))% — dùng thoải mái lại rồi.")
+            Notifier.push(title: "Session limit reset 🎉",
+                          body: "Usage is back to \(Int(new.rounded()))% — fresh window.")
         }
     }
 
     private func crossingAlerts(name: String, old: Double?, new: Double?) {
         guard let old, let new else { return }
         for threshold in [80.0, 95.0] where old < threshold && new >= threshold {
-            Notifier.push(title: "Claude \(name) đạt \(Int(new.rounded()))%",
-                          body: "Đã vượt ngưỡng \(Int(threshold))% giới hạn \(name.lowercased()).")
+            Notifier.push(title: "Claude \(name) at \(Int(new.rounded()))%",
+                          body: "Crossed the \(Int(threshold))% \(name.lowercased()) limit.")
         }
     }
 }
