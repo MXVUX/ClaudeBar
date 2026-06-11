@@ -6,6 +6,7 @@ struct PopoverView: View {
     @ObservedObject var model: UsageModel
     @ObservedObject var agents: AgentMonitor
     @ObservedObject var tokens: TokenStats
+    @ObservedObject var updates: UpdateChecker
     @ObservedObject private var l10n = L10n.shared
     @State private var showingSettings = false
 
@@ -13,7 +14,7 @@ struct PopoverView: View {
         VStack(alignment: .leading, spacing: 14) {
             header
             if showingSettings {
-                SettingsView(model: model)
+                SettingsView(model: model, updates: updates)
             } else {
                 mainContent
             }
@@ -51,6 +52,10 @@ struct PopoverView: View {
 
     @ViewBuilder
     private var mainContent: some View {
+        if let update = updates.available {
+            updateBanner(update)
+        }
+
         if let error = model.errorMessage, model.usage == nil {
             VStack(alignment: .leading, spacing: 6) {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
@@ -78,6 +83,38 @@ struct PopoverView: View {
 
         Divider()
         footer
+    }
+
+    private func updateBanner(_ update: AvailableUpdate) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Label(tr("ClaudeBar \(update.version) available", "Có bản mới \(update.version)"),
+                      systemImage: "arrow.down.circle.fill")
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(.blue)
+                Spacer()
+                if updates.state == .downloading {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Button(tr("Update", "Cập nhật")) {
+                        Task { await updates.updateNow() }
+                    }
+                    .font(.caption)
+                    Link(destination: update.pageURL) {
+                        Image(systemName: "info.circle")
+                    }
+                    .help(tr("Release notes", "Có gì mới"))
+                }
+            }
+            if case .failed(let message) = updates.state {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(8)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.blue.opacity(0.1)))
     }
 
     private func limitsSection(_ usage: UsageResponse) -> some View {
@@ -267,6 +304,7 @@ struct PopoverView: View {
 
 struct SettingsView: View {
     @ObservedObject var model: UsageModel
+    @ObservedObject var updates: UpdateChecker
     @ObservedObject private var l10n = L10n.shared
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var intervalSelection: Double = 60
@@ -315,9 +353,7 @@ struct SettingsView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 SectionHeader(tr("General", "Chung"))
-                Toggle(tr("Launch at login", "Khởi động cùng máy"), isOn: $launchAtLogin)
-                    .font(.callout)
-                    .toggleStyle(.checkbox)
+                Toggle(tr("Launch at login", "Khởi động cùng hệ thống"), isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { _, enabled in
                         do {
                             if enabled {
@@ -329,11 +365,47 @@ struct SettingsView: View {
                             launchAtLogin = SMAppService.mainApp.status == .enabled
                         }
                     }
+                Toggle(tr("Check for updates automatically", "Tự động kiểm tra bản cập nhật"),
+                       isOn: $updates.autoCheck)
+            }
+            .font(.callout)
+            .toggleStyle(.checkbox)
+
+            HStack(spacing: 8) {
+                Button(tr("Check for updates", "Kiểm tra cập nhật")) {
+                    Task { await updates.check(silent: false) }
+                }
+                .font(.caption)
+                if updates.state == .checking {
+                    ProgressView().controlSize(.small)
+                } else if let update = updates.available {
+                    Text("→ \(update.version)")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.blue)
+                } else if case .failed(let message) = updates.state {
+                    Text(message).font(.caption).foregroundStyle(.red)
+                } else if updates.lastChecked != nil {
+                    Text(tr("Up to date", "Đang là bản mới nhất"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
             }
 
             Divider()
+            HStack(spacing: 10) {
+                Link(destination: URL(string: "https://github.com/MXVUX/ClaudeBar")!) {
+                    Label("GitHub", systemImage: "chevron.left.forwardslash.chevron.right")
+                }
+                Link(destination: URL(string: "https://github.com/MXVUX/ClaudeBar/issues/new")!) {
+                    Label(tr("Report a bug", "Báo lỗi"), systemImage: "ladybug")
+                }
+                Spacer()
+            }
+            .font(.caption)
+
             HStack {
-                Text("ClaudeBar \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")")
+                Text("ClaudeBar \(UpdateChecker.currentVersion)")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
                 Spacer()

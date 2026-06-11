@@ -6,6 +6,7 @@ struct ClaudeBarApp: App {
     @StateObject private var model = UsageModel()
     @StateObject private var agents = AgentMonitor()
     @StateObject private var tokens = TokenStats()
+    @StateObject private var updates = UpdateChecker()
 
     init() {
         // Single instance: a second launch (e.g. DMG copy + Applications copy)
@@ -29,7 +30,7 @@ struct ClaudeBarApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            PopoverView(model: model, agents: agents, tokens: tokens)
+            PopoverView(model: model, agents: agents, tokens: tokens, updates: updates)
         } label: {
             Text(model.menuTitle)
                 .font(.system(size: 12, weight: .medium).monospacedDigit())
