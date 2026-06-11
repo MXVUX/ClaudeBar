@@ -81,8 +81,19 @@ struct PopoverView: View {
         }
 
         if let usage = model.usage {
-            limitsSection(usage)
-            sparklineSection
+            if usage.hasAnyDisplayable {
+                limitsSection(usage)
+                sparklineSection
+            } else {
+                CardBox {
+                    Label(tr("This plan has no usage limits to display.",
+                             "Gói này không có limit nào để hiển thị."),
+                          systemImage: "info.circle")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
         }
         if !agents.agents.isEmpty {
             agentsSection

@@ -69,6 +69,13 @@ struct UsageResponse: Decodable {
         fiveHour?.utilization == nil && sevenDay?.utilization == nil
             && extraUsage?.isEnabled == true
     }
+
+    /// Free or unknown plans can return a response with nothing to show.
+    var hasAnyDisplayable: Bool {
+        fiveHour?.utilization != nil || sevenDay?.utilization != nil
+            || sevenDaySonnet?.utilization != nil || sevenDayOpus?.utilization != nil
+            || omelettePromotional?.utilization != nil || extraUsage?.isEnabled == true
+    }
 }
 
 // MARK: - Model
@@ -161,6 +168,7 @@ final class UsageModel: ObservableObject {
         guard let u = usage else {
             return errorMessage == nil ? "✳ …" : "✳ –"
         }
+        if !u.hasAnyDisplayable { return "✳" }
         if u.isSpendBased, let extra = u.extraUsage, let limit = extra.monthlyLimit {
             let used = extra.usedCredits ?? 0
             let warn = limit > 0 && used / limit >= 0.9 ? "❗" : ""
