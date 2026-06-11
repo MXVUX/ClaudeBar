@@ -2,7 +2,14 @@
 
 macOS menu bar app theo dõi liên tục usage limits của Claude (Pro/Max plan) — không cần mở `/usage` trong Claude Code nữa.
 
-**Menu bar:** `✳ 13% · 11%` (session 5h · weekly) — thêm `❗` khi sắp chạm limit.
+<p align="center">
+  <img src="docs/menubar.png" alt="ClaudeBar trên menu bar" width="280">
+</p>
+<p align="center">
+  <img src="docs/popover.png" alt="ClaudeBar popover" width="360">
+</p>
+
+**Menu bar:** `✳ 36% · 13% · 3h03` (session 5h · weekly · countdown tới reset) — thêm `❗` khi sắp chạm limit.
 
 **Popover khi click:**
 - **Limits**: progress bar từng hạng mục (Current session, Weekly · All models, Weekly · Sonnet/Opus, Extra credits) — đổi màu theo mức dùng, kèm giờ reset
