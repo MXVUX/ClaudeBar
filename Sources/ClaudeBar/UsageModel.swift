@@ -85,7 +85,8 @@ final class UsageModel: ObservableObject {
     private let history = HistoryStore()
 
     var refreshInterval: TimeInterval {
-        get { max(15, UserDefaults.standard.double(forKey: "refreshInterval").nonZero ?? 30) }
+        // The usage endpoint rate-limits around 1 req/min, so 60s is the floor.
+        get { max(60, UserDefaults.standard.double(forKey: "refreshInterval").nonZero ?? 60) }
         set {
             UserDefaults.standard.set(newValue, forKey: "refreshInterval")
             restartTimer()
@@ -195,8 +196,10 @@ final class UsageModel: ObservableObject {
                 throw UsageError.message("Token hết hạn — hãy mở Claude Code để làm mới")
             }
             if http.statusCode == 429 {
-                rateLimitedUntil = Date().addingTimeInterval(120)
-                throw UsageError.message("API đang giới hạn tần suất — tự thử lại sau 2 phút")
+                let retryAfter = Double(http.value(forHTTPHeaderField: "Retry-After") ?? "") ?? 90
+                let wait = max(retryAfter, 60)
+                rateLimitedUntil = Date().addingTimeInterval(wait)
+                throw UsageError.message("API giới hạn tần suất — tự thử lại sau \(Int(wait))s")
             }
             guard http.statusCode == 200 else {
                 throw UsageError.message("API lỗi HTTP \(http.statusCode)")

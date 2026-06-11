@@ -180,9 +180,8 @@ struct PopoverView: View {
             HStack {
                 Text("Refresh").font(.caption)
                 Picker("", selection: $intervalSelection) {
-                    Text("15s").tag(15.0)
-                    Text("30s").tag(30.0)
-                    Text("60s").tag(60.0)
+                    Text("1m").tag(60.0)
+                    Text("2m").tag(120.0)
                     Text("5m").tag(300.0)
                 }
                 .pickerStyle(.segmented)
