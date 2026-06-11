@@ -60,23 +60,23 @@ git clone https://github.com/MXVUX/ClaudePulse.git && cd ClaudePulse
 ./scripts/build_dmg.sh 2.0.0   # → dist/ClaudePulse.dmg (universal: Apple Silicon + Intel)
 ```
 
-Yêu cầu Xcode 16+ / Swift 6. Script tự ký bằng identity `ClaudeBar Signing` nếu có trong Keychain, không thì ký ad-hoc.
+Yêu cầu Xcode 16+ / Swift 6. Script tự ký bằng identity `ClaudeBar Signing` nếu có trong Keychain (tên cert giữ nguyên từ thời tên cũ — đổi cert sẽ làm các bản đã phát hành từ chối update vì signature pinning), không thì ký ad-hoc.
 
 ## Cấu trúc source
 
-- `Sources/ClaudeBar/ClaudeBarApp.swift` — entry point, MenuBarExtra, chặn chạy trùng, onboarding lần đầu
-- `Sources/ClaudeBar/UsageModel.swift` — fetch usage, đa tài khoản, burn rate, dự báo, cảnh báo ngưỡng
-- `Sources/ClaudeBar/ClaudeAuth.swift` — Sign in with Claude (OAuth PKCE), lưu + tự gia hạn token riêng
-- `Sources/ClaudeBar/KeychainTokenProvider.swift` — đọc token Claude Code từ Keychain
-- `Sources/ClaudeBar/UpdateChecker.swift` — kiểm tra bản mới + tự cập nhật
-- `Sources/ClaudeBar/AgentMonitor.swift` — quét agent đang chạy (libproc)
-- `Sources/ClaudeBar/StatusChecker.swift` — theo dõi status page của Anthropic
-- `Sources/ClaudeBar/TokenStats.swift` — thống kê token/chi phí từ transcript
-- `Sources/ClaudeBar/HistoryStore.swift` — lưu lịch sử usage cho sparkline
-- `Sources/ClaudeBar/L10n.swift` — song ngữ EN/VI
-- `Sources/ClaudeBar/Theme.swift` — theme sáng/tối/hệ thống
-- `Sources/ClaudeBar/Notifier.swift` — macOS notifications
-- `Sources/ClaudeBar/PopoverView.swift` — UI popover + Settings (SwiftUI + Charts)
+- `Sources/ClaudePulse/ClaudePulseApp.swift` — entry point, MenuBarExtra, chặn chạy trùng, onboarding lần đầu
+- `Sources/ClaudePulse/UsageModel.swift` — fetch usage, đa tài khoản, burn rate, dự báo, cảnh báo ngưỡng
+- `Sources/ClaudePulse/ClaudeAuth.swift` — Sign in with Claude (OAuth PKCE), lưu + tự gia hạn token riêng
+- `Sources/ClaudePulse/KeychainTokenProvider.swift` — đọc token Claude Code từ Keychain
+- `Sources/ClaudePulse/UpdateChecker.swift` — kiểm tra bản mới + tự cập nhật
+- `Sources/ClaudePulse/AgentMonitor.swift` — quét agent đang chạy (libproc)
+- `Sources/ClaudePulse/StatusChecker.swift` — theo dõi status page của Anthropic
+- `Sources/ClaudePulse/TokenStats.swift` — thống kê token/chi phí từ transcript
+- `Sources/ClaudePulse/HistoryStore.swift` — lưu lịch sử usage cho sparkline
+- `Sources/ClaudePulse/L10n.swift` — song ngữ EN/VI
+- `Sources/ClaudePulse/Theme.swift` — theme sáng/tối/hệ thống
+- `Sources/ClaudePulse/Notifier.swift` — macOS notifications
+- `Sources/ClaudePulse/PopoverView.swift` — UI popover + Settings (SwiftUI + Charts)
 - `scripts/build_dmg.sh` — build universal binary → .app → codesign → .dmg
 
 ## License

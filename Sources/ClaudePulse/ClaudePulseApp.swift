@@ -3,7 +3,7 @@ import AppKit
 import ServiceManagement
 
 @main
-struct ClaudeBarApp: App {
+struct ClaudePulseApp: App {
     @StateObject private var model = UsageModel()
     @StateObject private var agents = AgentMonitor()
     @StateObject private var tokens = TokenStats()

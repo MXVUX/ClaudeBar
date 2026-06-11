@@ -44,7 +44,7 @@ final class UpdateChecker: ObservableObject {
             while !Task.isCancelled {
                 await self?.check(silent: true)
                 // Hidden hook so the full pipeline is testable headlessly.
-                if ProcessInfo.processInfo.environment["CLAUDEBAR_FORCE_UPDATE"] == "1",
+                if ProcessInfo.processInfo.environment["CLAUDEPULSE_FORCE_UPDATE"] == "1",
                    self?.available != nil {
                     await self?.updateNow()
                 }

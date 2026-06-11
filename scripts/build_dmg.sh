@@ -15,7 +15,7 @@ echo "==> Assembling app bundle"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 # Executable keeps the original target name; only the bundle was renamed.
-cp "$ROOT/.build/apple/Products/Release/ClaudeBar" "$APP/Contents/MacOS/ClaudeBar"
+cp "$ROOT/.build/apple/Products/Release/ClaudePulse" "$APP/Contents/MacOS/ClaudePulse"
 
 # CFBundleIdentifier stays com.minhvu.claudebar on purpose: changing it would
 # reset every user's UserDefaults and login item.
@@ -24,7 +24,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleExecutable</key><string>ClaudeBar</string>
+    <key>CFBundleExecutable</key><string>ClaudePulse</string>
     <key>CFBundleIdentifier</key><string>com.minhvu.claudebar</string>
     <key>CFBundleName</key><string>ClaudePulse</string>
     <key>CFBundleDisplayName</key><string>ClaudePulse</string>

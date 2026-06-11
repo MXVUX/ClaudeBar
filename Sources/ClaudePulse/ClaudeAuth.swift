@@ -9,7 +9,7 @@ struct OwnCredentials: Codable {
 }
 
 /// "Sign in with Claude" — the same OAuth flow Claude Code uses (PKCE +
-/// manual code paste), but the resulting tokens are ClaudeBar's own, stored
+/// manual code paste), but the resulting tokens are ClaudePulse's own, stored
 /// in a separate Keychain item and refreshed independently. Claude Code's
 /// session is never touched.
 enum ClaudeAuth {

@@ -2,9 +2,9 @@
 import PackageDescription
 
 let package = Package(
-    name: "ClaudeBar",
+    name: "ClaudePulse",
     platforms: [.macOS(.v14)],
     targets: [
-        .executableTarget(name: "ClaudeBar", path: "Sources/ClaudeBar")
+        .executableTarget(name: "ClaudePulse", path: "Sources/ClaudePulse")
     ]
 )
