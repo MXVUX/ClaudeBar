@@ -88,6 +88,21 @@ struct PopoverView: View {
             }
         }
 
+        // No data yet (first fetch or just-switched tab) — say so instead of
+        // showing a confusing half-empty popover.
+        if model.usage == nil && model.errorMessage == nil {
+            CardBox {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(tr("Loading usage data — up to a minute on first load…",
+                            "Đang tải dữ liệu — lần đầu có thể mất tới 1 phút…"))
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+
         // Ordered by value: limits first, cost second, agents, then the chart.
         if let usage = model.usage {
             if usage.hasAnyDisplayable {
@@ -293,12 +308,13 @@ struct PopoverView: View {
 
     @ViewBuilder
     private func todayRows(_ today: DayUsage) -> some View {
-            HStack(spacing: 12) {
-                TokenStat(label: "in", value: today.input)
-                TokenStat(label: "out", value: today.output)
-                TokenStat(label: "cache", value: today.cacheRead + today.cacheWrite)
+            HStack {
+                Text("in \(compactTokens(today.input)) · out \(compactTokens(today.output)) · cache \(compactTokens(today.cacheRead + today.cacheWrite))")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
                 Spacer()
-                Text("\(compactTokens(today.total)) tok")
+                Text(compactTokens(today.total))
                     .font(.callout.monospacedDigit().weight(.semibold))
             }
             if !today.models.isEmpty {

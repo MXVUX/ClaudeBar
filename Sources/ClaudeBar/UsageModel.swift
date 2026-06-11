@@ -98,9 +98,23 @@ final class UsageModel: ObservableObject {
         didSet {
             guard oldValue != selectedSource else { return }
             UserDefaults.standard.set(selectedSource.rawValue, forKey: "selectedAccount")
-            usage = usageCache[selectedSource]
+            showCachedUsage()
             errorMessage = nil
             Task { await self.refresh() }
+        }
+    }
+
+    /// Last known data for the selected account — switching tabs (or a fresh
+    /// launch) shows it instantly instead of a blank wait for the next fetch.
+    private func showCachedUsage() {
+        usage = usageCache[selectedSource]
+        lastUpdated = UserDefaults.standard
+            .object(forKey: "usageCacheAt.\(selectedSource.rawValue)") as? Date
+        switch selectedSource {
+        case .claudeCode:
+            subscriptionType = ccSubscription
+        case .ownLogin:
+            subscriptionType = usageCache[.ownLogin]?.isSpendBased == true ? "Enterprise" : nil
         }
     }
 
@@ -154,6 +168,13 @@ final class UsageModel: ObservableObject {
 
     init() {
         samples = history.samples
+        // Restore per-account usage caches for instant display.
+        for source in AccountSource.allCases {
+            if let data = UserDefaults.standard.data(forKey: "usageCache.\(source.rawValue)"),
+               let cached = try? JSONDecoder().decode(UsageResponse.self, from: data) {
+                usageCache[source] = cached
+            }
+        }
         // Restore selection; if it points at a missing account, use the other.
         let stored = AccountSource(rawValue: UserDefaults.standard.string(forKey: "selectedAccount") ?? "")
         let own = ClaudeAuth.load() != nil
@@ -163,6 +184,7 @@ final class UsageModel: ObservableObject {
         } else if own && !cc {
             selectedSource = .ownLogin
         }
+        showCachedUsage()
         Notifier.requestAuthorization()
         restartTimer()
     }
@@ -295,6 +317,8 @@ final class UsageModel: ObservableObject {
             let fresh = try JSONDecoder().decode(UsageResponse.self, from: data)
             usage = fresh
             usageCache[selectedSource] = fresh
+            UserDefaults.standard.set(data, forKey: "usageCache.\(selectedSource.rawValue)")
+            UserDefaults.standard.set(Date(), forKey: "usageCacheAt.\(selectedSource.rawValue)")
             lastUpdated = Date()
             errorMessage = nil
 
