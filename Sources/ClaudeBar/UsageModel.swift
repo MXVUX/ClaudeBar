@@ -246,11 +246,12 @@ final class UsageModel: ObservableObject {
 
     private var rateLimitedUntil: Date?
 
-    func refresh() async {
-        if let until = rateLimitedUntil {
+    func refresh(force: Bool = false) async {
+        if let until = rateLimitedUntil, !force {
             if Date() < until { return }
             rateLimitedUntil = nil
         }
+        if force { rateLimitedUntil = nil }
         do {
             let token = try await resolveToken()
             var request = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/usage")!)
@@ -298,6 +299,11 @@ final class UsageModel: ObservableObject {
         } catch {
             let msg = (error as? UsageError)?.text ?? error.localizedDescription
             errorMessage = msg
+            // A denied Keychain prompt would otherwise re-prompt every poll —
+            // back off; the manual refresh button still tries immediately.
+            if msg.contains("Always Allow") {
+                rateLimitedUntil = Date().addingTimeInterval(900)
+            }
             AppLog.write("fetch error: \(msg)")
         }
     }

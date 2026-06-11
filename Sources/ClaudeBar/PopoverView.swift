@@ -323,7 +323,7 @@ struct PopoverView: View {
             }
             Spacer()
             Button {
-                Task { await model.refresh() }
+                Task { await model.refresh(force: true) }
             } label: {
                 Image(systemName: "arrow.clockwise")
             }

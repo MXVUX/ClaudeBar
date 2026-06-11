@@ -109,30 +109,57 @@ final class UpdateChecker: ObservableObject {
     func updateNow() async {
         guard let update = available, state != .downloading else { return }
         state = .downloading
+        let dmgPath = "/tmp/ClaudeBar-update.dmg"
+        let mount = "/tmp/ClaudeBar-update-mnt"
+        let staging = "/tmp/ClaudeBar-update.app"
         do {
             let (tmpFile, _) = try await URLSession.shared.download(from: update.dmgURL)
-            let dmgPath = "/tmp/ClaudeBar-update.dmg"
             try? FileManager.default.removeItem(atPath: dmgPath)
             try FileManager.default.moveItem(at: tmpFile, to: URL(fileURLWithPath: dmgPath))
 
-            let mount = "/tmp/ClaudeBar-update-mnt"
+            // A stale mount from a previously failed run would block attach.
+            try? runTool("/usr/bin/hdiutil", ["detach", mount, "-quiet", "-force"])
             try runTool("/usr/bin/hdiutil", ["attach", dmgPath, "-nobrowse", "-quiet", "-mountpoint", mount])
-            let staging = "/tmp/ClaudeBar-update.app"
-            try? FileManager.default.removeItem(atPath: staging)
-            try runTool("/usr/bin/ditto", ["\(mount)/ClaudeBar.app", staging])
+            do {
+                try? FileManager.default.removeItem(atPath: staging)
+                try runTool("/usr/bin/ditto", ["\(mount)/ClaudeBar.app", staging])
+            } catch {
+                try? runTool("/usr/bin/hdiutil", ["detach", mount, "-quiet"])
+                throw error
+            }
             try? runTool("/usr/bin/hdiutil", ["detach", mount, "-quiet"])
             // Strip quarantine so Gatekeeper doesn't re-block the swapped copy.
             try? runTool("/usr/bin/xattr", ["-dr", "com.apple.quarantine", staging])
 
-            let dest = Bundle.main.bundlePath
+            // Install over ourselves — unless we're running from a DMG, a
+            // translocated path, or anywhere read-only; then /Applications.
+            var dest = Bundle.main.bundlePath
+            let parent = (dest as NSString).deletingLastPathComponent
+            if dest.contains("/AppTranslocation/") || dest.hasPrefix("/Volumes/")
+                || !FileManager.default.isWritableFile(atPath: parent) {
+                dest = "/Applications/ClaudeBar.app"
+                AppLog.write("update: unwritable location, installing to \(dest)")
+            }
+
             let pid = ProcessInfo.processInfo.processIdentifier
             let script = """
             #!/bin/bash
+            exec >> "$HOME/Library/Logs/ClaudeBar.log" 2>&1
+            echo "swap: waiting for pid \(pid)"
             while /bin/kill -0 \(pid) 2>/dev/null; do /bin/sleep 0.3; done
-            /bin/rm -rf "\(dest)"
-            /usr/bin/ditto "\(staging)" "\(dest)"
-            /bin/rm -rf "\(staging)" "\(dmgPath)"
-            /usr/bin/open "\(dest)"
+            /bin/sleep 1
+            /bin/rm -rf "\(dest).new"
+            if /usr/bin/ditto "\(staging)" "\(dest).new"; then
+                /bin/rm -rf "\(dest)"
+                /bin/mv "\(dest).new" "\(dest)"
+                echo "swap: installed \(update.version) at \(dest)"
+            else
+                echo "swap: copy failed, keeping current app"
+            fi
+            /bin/rm -rf "\(staging)" "\(dmgPath)" "\(dest).new"
+            /usr/bin/xattr -dr com.apple.quarantine "\(dest)" 2>/dev/null
+            /usr/bin/open "\(dest)" || { /bin/sleep 2; /usr/bin/open "\(dest)"; }
+            echo "swap: done"
             """
             let scriptPath = "/tmp/claudebar-swap.sh"
             try script.write(toFile: scriptPath, atomically: true, encoding: .utf8)

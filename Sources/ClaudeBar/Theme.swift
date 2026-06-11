@@ -20,10 +20,14 @@ final class ThemeManager: ObservableObject {
     }
 
     func apply() {
+        // NSApplication.shared (not the NSApp global): during SwiftUI's
+        // App.init the NSApp global is still nil and unwrapping it crashed
+        // v1.7.0 at launch. .shared creates the application object on demand.
+        let app = NSApplication.shared
         switch theme {
-        case .system: NSApp.appearance = nil
-        case .light: NSApp.appearance = NSAppearance(named: .aqua)
-        case .dark: NSApp.appearance = NSAppearance(named: .darkAqua)
+        case .system: app.appearance = nil
+        case .light: app.appearance = NSAppearance(named: .aqua)
+        case .dark: app.appearance = NSAppearance(named: .darkAqua)
         }
     }
 }

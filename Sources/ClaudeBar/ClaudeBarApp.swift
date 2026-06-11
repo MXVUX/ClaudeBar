@@ -10,10 +10,15 @@ struct ClaudeBarApp: App {
 
     init() {
         // Single instance: a second launch (e.g. DMG copy + Applications copy)
-        // would show two menu bar icons.
-        if let bundleID = Bundle.main.bundleIdentifier,
-           NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).count > 1 {
-            exit(0)
+        // would show two menu bar icons. LaunchServices' list can briefly
+        // contain a just-quit instance (which killed relaunch-after-update),
+        // so only count entries whose process is actually alive.
+        if let bundleID = Bundle.main.bundleIdentifier {
+            let myPID = ProcessInfo.processInfo.processIdentifier
+            let liveOthers = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+                .filter { $0.processIdentifier > 0 && $0.processIdentifier != myPID }
+                .filter { kill($0.processIdentifier, 0) == 0 }
+            if !liveOthers.isEmpty { exit(0) }
         }
         ThemeManager.shared.apply()
         // First launch: the app has no window, so tell the user where it lives.
