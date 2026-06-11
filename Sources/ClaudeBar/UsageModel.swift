@@ -196,10 +196,12 @@ final class UsageModel: ObservableObject {
                 throw UsageError.message("Token hết hạn — hãy mở Claude Code để làm mới")
             }
             if http.statusCode == 429 {
+                // Routine: Claude Code shares this endpoint's quota. Skip
+                // quietly and retry — stale-by-a-minute data is fine.
                 let retryAfter = Double(http.value(forHTTPHeaderField: "Retry-After") ?? "") ?? 90
-                let wait = max(retryAfter, 60)
-                rateLimitedUntil = Date().addingTimeInterval(wait)
-                throw UsageError.message("API giới hạn tần suất — tự thử lại sau \(Int(wait))s")
+                rateLimitedUntil = Date().addingTimeInterval(max(retryAfter, 60))
+                AppLog.write("rate limited, retry in \(Int(max(retryAfter, 60)))s")
+                return
             }
             guard http.statusCode == 200 else {
                 throw UsageError.message("API lỗi HTTP \(http.statusCode)")
