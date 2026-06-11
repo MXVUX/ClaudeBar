@@ -3,9 +3,9 @@
 macOS menu bar app theo dõi liên tục usage limits của Claude — hỗ trợ gói cá nhân (Pro/Max) lẫn **Enterprise**, không cần mở `/usage` trong Claude Code nữa.
 
 <p align="center">
-  <img src="docs/screenshot-max.png" alt="ClaudePulse — tài khoản Max" width="260">
-  <img src="docs/screenshot-enterprise.png" alt="ClaudePulse — tài khoản Enterprise" width="260">
-  <img src="docs/screenshot-settings.png" alt="ClaudePulse — Cài đặt" width="260">
+  <img src="docs/screenshot-max.png" align="top" alt="ClaudePulse — tài khoản Max" width="260">
+  <img src="docs/screenshot-enterprise.png" align="top" alt="ClaudePulse — tài khoản Enterprise" width="260">
+  <img src="docs/screenshot-settings.png" align="top" alt="ClaudePulse — Cài đặt" width="260">
 </p>
 
 **Menu bar:** gói cá nhân hiện `✳ 59% · 16% · 1h03` (session 5h · weekly · countdown tới reset), gói Enterprise hiện `✳ $0/$80` (hạn mức chi tiêu) — thêm `❗` khi sắp chạm limit.
