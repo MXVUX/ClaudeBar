@@ -139,6 +139,23 @@ final class UpdateChecker: ObservableObject {
                 throw error
             }
             try? runTool("/usr/bin/hdiutil", ["detach", mount, "-quiet"])
+
+            // Pin the update to our signing certificate: even if the release
+            // channel (GitHub account) were compromised, a foreign binary
+            // fails this check and is never installed.
+            let requirement = "identifier \"com.minhvu.claudebar\" and certificate leaf = "
+                + "H\"fe60465ec5a793c32d17c90602388ea40f11430e\""
+            do {
+                try runTool("/usr/bin/codesign", ["--verify", "--deep", "-R=\(requirement)", staging])
+            } catch {
+                try? FileManager.default.removeItem(atPath: staging)
+                try? FileManager.default.removeItem(atPath: dmgPath)
+                AppLog.write("update REJECTED: signature pin mismatch")
+                throw UsageError.message(
+                    tr("Update rejected — its signature doesn't match this app's developer. Download manually from GitHub if this persists.",
+                       "Từ chối bản cập nhật — chữ ký không khớp nhà phát triển. Nếu lặp lại, tải thủ công trên GitHub."))
+            }
+
             // Strip quarantine so Gatekeeper doesn't re-block the swapped copy.
             try? runTool("/usr/bin/xattr", ["-dr", "com.apple.quarantine", staging])
 

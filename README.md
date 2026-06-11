@@ -49,7 +49,7 @@ Chi tiết:
 - Gọi `GET https://api.anthropic.com/api/oauth/usage` theo chu kỳ — cùng endpoint mà lệnh `/usage` của Claude Code dùng. Hỗ trợ cả limit dạng % (Pro/Max) lẫn dạng hạn mức chi tiêu (Enterprise).
 - Thống kê token đọc từ transcript local của Claude Code (`~/.claude/projects/**/*.jsonl`) — chỉ đọc. Con số $ là quy đổi theo giá niêm yết API để tham khảo, không phải tiền bị trừ.
 - Danh sách agent lấy từ process list của chính user (libproc) — không cần quyền đặc biệt.
-- Kiểm tra bản mới qua GitHub Releases API (ẩn danh, tắt được trong Settings); bản cập nhật tải trực tiếp từ Releases của repo này.
+- Kiểm tra bản mới qua GitHub Releases API (ẩn danh, tắt được trong Settings); bản cập nhật tải trực tiếp từ Releases của repo này và **chỉ được cài nếu chữ ký code khớp đúng certificate của nhà phát triển** (signature pinning) — kênh phân phối có bị chiếm cũng không đẩy được binary lạ vào máy bạn.
 - Lịch sử usage lưu local tại `~/Library/Application Support/ClaudePulse/history.json` (48h). Log tại `~/Library/Logs/ClaudePulse.log`.
 - Không thu thập, không gửi telemetry. Toàn bộ source code trong repo này.
 
