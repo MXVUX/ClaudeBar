@@ -1,21 +1,26 @@
 # ClaudeBar ✳
 
-macOS menu bar app theo dõi liên tục usage limits của Claude (Pro/Max plan) — không cần mở `/usage` trong Claude Code nữa.
+macOS menu bar app theo dõi liên tục usage limits của Claude — hỗ trợ gói cá nhân (Pro/Max) lẫn **Enterprise**, không cần mở `/usage` trong Claude Code nữa.
 
 <p align="center">
-  <img src="docs/screenshot.png" alt="ClaudeBar — menu bar và popover" width="340">
+  <img src="docs/screenshot-max.png" alt="ClaudeBar — tài khoản Max" width="300">
+  <img src="docs/screenshot-enterprise.png" alt="ClaudeBar — tài khoản Enterprise" width="300">
 </p>
 
-**Menu bar:** `✳ 40% · 14% · 2h49` (session 5h · weekly · countdown tới reset) — thêm `❗` khi sắp chạm limit.
+**Menu bar:** gói cá nhân hiện `✳ 59% · 16% · 1h03` (session 5h · weekly · countdown tới reset), gói Enterprise hiện `✳ $0/$80` (hạn mức chi tiêu) — thêm `❗` khi sắp chạm limit.
 
-**Popover khi click:**
-- **Limits**: progress bar từng hạng mục (Current session, Weekly · All models, Weekly · Sonnet/Opus, Extra credits) — đổi màu theo mức dùng, kèm giờ reset
+## Tính năng
+
+- **Limits**: progress bar từng hạng mục — gói cá nhân: Current session, Weekly · All models, Weekly · Sonnet/Opus; gói Enterprise: Hạn mức chi tiêu ($ đã dùng / hạn mức), Claude Design allowance — đổi màu theo mức dùng, kèm giờ reset
+- **Nhiều tài khoản**: có cả token Claude Code lẫn Sign in with Claude (vd cá nhân + Enterprise) → tab chuyển tài khoản đầu popover, xem được cả 2
 - **Burn rate + dự báo**: tốc độ tiêu %/giờ và dự đoán có chạm 100% trước giờ reset không
 - **Last 24h**: biểu đồ lịch sử session + weekly
 - **Agents running**: các AI coding agent đang chạy trên máy (Claude Code, Codex, Gemini CLI, Aider) kèm thư mục dự án và trạng thái working/idle
 - **Today · Claude Code**: token dùng trong ngày (in/out/cache), quy đổi ≈ giá API (tham khảo), biểu đồ chi phí 7 ngày
-- **Notifications**: cảnh báo khi vượt 80% / 95%, báo khi session limit reset xong
-- **Settings (⚙)**: tuỳ chọn hiển thị menu bar (session %, weekly %, countdown), refresh interval 1m/2m/5m, Launch at Login
+- **Notifications**: cảnh báo khi vượt 80% / 95%, báo khi session limit reset xong, báo khi có phiên bản mới
+- **Tự động cập nhật**: app tự kiểm tra bản mới trên GitHub, bấm Update là tự tải + tự thay + tự mở lại
+- **Ngôn ngữ**: English / Tiếng Việt (Settings ⚙ — thuật ngữ chuẩn như session, token, burn rate giữ nguyên tiếng Anh)
+- **Settings (⚙)**: tài khoản, ngôn ngữ, tuỳ chọn hiển thị menu bar, refresh interval 1m/2m/5m, khởi động cùng hệ thống
 
 ## Cài đặt
 
@@ -23,41 +28,51 @@ macOS menu bar app theo dõi liên tục usage limits của Claude (Pro/Max plan
 2. Vì app chưa notarize (không có Apple Developer ID), lần đầu mở macOS sẽ chặn:
    - Mở **System Settings → Privacy & Security**, kéo xuống và bấm **Open Anyway**.
    - Hoặc chạy: `xattr -d com.apple.quarantine /Applications/ClaudeBar.app`
-3. Khi macOS hỏi quyền truy cập Keychain item của Claude Code → bấm **Always Allow**.
-4. Khi app xin quyền Notifications → **Allow** (để nhận cảnh báo ngưỡng).
+3. Khi macOS hỏi quyền truy cập Keychain item của Claude Code → bấm **Always Allow** (**chỉ hỏi đúng 1 lần** — app ký bằng danh tính cố định nên các bản cập nhật sau không hỏi lại).
+4. Khi app xin quyền Notifications → **Allow** (để nhận cảnh báo ngưỡng và thông báo bản mới).
 
-**Yêu cầu:** macOS 14+, đã đăng nhập [Claude Code](https://claude.com/claude-code) trên máy (app dùng phiên đăng nhập đó để đọc usage).
+Từ đó về sau **không cần cài tay nữa** — có bản mới app sẽ báo, bấm Update là xong.
+
+**Yêu cầu:** macOS 14+, và một trong hai: đã đăng nhập [Claude Code](https://claude.com/claude-code) trên máy, **hoặc** dùng **Sign in with Claude** ngay trong app (Settings ⚙ → Account).
 
 ## Cách hoạt động & bảo mật
 
-Hai cách đăng nhập:
+Hai cách kết nối tài khoản:
 
 1. **Mặc định**: app đọc OAuth token của Claude Code từ macOS Keychain (item `Claude Code-credentials`) — **chỉ đọc**, không sửa, không tự refresh, không gửi đi đâu ngoài `api.anthropic.com`. Phù hợp người dùng Claude Code hằng ngày (Claude Code tự gia hạn token).
-2. **Sign in with Claude** (Settings ⚙ → Account): dành cho người ít mở Claude Code (chủ yếu dùng Claude app/web). App mở browser cho bạn đồng ý qua OAuth chính thức của Anthropic, giữ token **riêng** trong Keychain item của app và tự gia hạn — hoàn toàn không đụng tới session Claude Code.
-- Gọi `GET https://api.anthropic.com/api/oauth/usage` theo chu kỳ — cùng endpoint mà lệnh `/usage` của Claude Code dùng.
-- Nếu token hết hạn (lâu không dùng Claude Code), app hiện cảnh báo "mở Claude Code để làm mới" thay vì hiện số sai.
-- Thống kê token đọc từ transcript local của Claude Code (`~/.claude/projects/**/*.jsonl`) — chỉ đọc. Con số $ là quy đổi theo giá niêm yết API để tham khảo, không phải tiền bị trừ (gói Pro/Max trả phí cố định).
+2. **Sign in with Claude** (Settings ⚙ → Account): kết nối ClaudeBar trực tiếp với tài khoản Claude qua OAuth chính thức của Anthropic — app giữ token **riêng** trong Keychain item của app và tự quản lý, độc lập hoàn toàn với Claude Code. Phù hợp người chủ yếu dùng Claude app/web, hoặc muốn theo dõi tài khoản thứ hai (vd Enterprise).
+
+Chi tiết:
+
+- Gọi `GET https://api.anthropic.com/api/oauth/usage` theo chu kỳ — cùng endpoint mà lệnh `/usage` của Claude Code dùng. Hỗ trợ cả limit dạng % (Pro/Max) lẫn dạng hạn mức chi tiêu (Enterprise).
+- Thống kê token đọc từ transcript local của Claude Code (`~/.claude/projects/**/*.jsonl`) — chỉ đọc. Con số $ là quy đổi theo giá niêm yết API để tham khảo, không phải tiền bị trừ.
 - Danh sách agent lấy từ process list của chính user (libproc) — không cần quyền đặc biệt.
+- Kiểm tra bản mới qua GitHub Releases API (ẩn danh, tắt được trong Settings); bản cập nhật tải trực tiếp từ Releases của repo này.
 - Lịch sử usage lưu local tại `~/Library/Application Support/ClaudeBar/history.json` (48h). Log tại `~/Library/Logs/ClaudeBar.log`.
 - Không thu thập, không gửi telemetry. Toàn bộ source code trong repo này.
 
 ## Build từ source
 
 ```bash
-git clone <repo-url> && cd ClaudeBar
-./scripts/build_dmg.sh 1.1.0   # → dist/ClaudeBar.dmg (universal: Apple Silicon + Intel)
+git clone https://github.com/MXVUX/ClaudeBar.git && cd ClaudeBar
+./scripts/build_dmg.sh 1.6.0   # → dist/ClaudeBar.dmg (universal: Apple Silicon + Intel)
 ```
 
-Yêu cầu Xcode 16+ / Swift 6.
+Yêu cầu Xcode 16+ / Swift 6. Script tự ký bằng identity `ClaudeBar Signing` nếu có trong Keychain, không thì ký ad-hoc.
 
 ## Cấu trúc source
 
-- `Sources/ClaudeBar/ClaudeBarApp.swift` — entry point, MenuBarExtra
-- `Sources/ClaudeBar/UsageModel.swift` — fetch API, burn rate, dự báo, cảnh báo ngưỡng
-- `Sources/ClaudeBar/KeychainTokenProvider.swift` — đọc token từ Keychain
+- `Sources/ClaudeBar/ClaudeBarApp.swift` — entry point, MenuBarExtra, chặn chạy trùng, onboarding lần đầu
+- `Sources/ClaudeBar/UsageModel.swift` — fetch usage, đa tài khoản, burn rate, dự báo, cảnh báo ngưỡng
+- `Sources/ClaudeBar/ClaudeAuth.swift` — Sign in with Claude (OAuth PKCE), lưu + tự gia hạn token riêng
+- `Sources/ClaudeBar/KeychainTokenProvider.swift` — đọc token Claude Code từ Keychain
+- `Sources/ClaudeBar/UpdateChecker.swift` — kiểm tra bản mới + tự cập nhật
+- `Sources/ClaudeBar/AgentMonitor.swift` — quét agent đang chạy (libproc)
+- `Sources/ClaudeBar/TokenStats.swift` — thống kê token/chi phí từ transcript
 - `Sources/ClaudeBar/HistoryStore.swift` — lưu lịch sử usage cho sparkline
+- `Sources/ClaudeBar/L10n.swift` — song ngữ EN/VI
 - `Sources/ClaudeBar/Notifier.swift` — macOS notifications
-- `Sources/ClaudeBar/PopoverView.swift` — UI popover (SwiftUI + Charts)
+- `Sources/ClaudeBar/PopoverView.swift` — UI popover + Settings (SwiftUI + Charts)
 - `scripts/build_dmg.sh` — build universal binary → .app → codesign → .dmg
 
 ## License
