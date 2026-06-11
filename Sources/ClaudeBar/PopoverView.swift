@@ -201,14 +201,22 @@ struct PopoverView: View {
     private func limitsRows(_ usage: UsageResponse) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             if usage.fiveHour?.utilization != nil {
+                let forecast = model.sessionForecast
                 UsageRow(title: tr("Current session", "Session hiện tại"),
-                         bucket: usage.fiveHour, resetStyle: .relative)
-                if let forecast = model.sessionForecast {
+                         bucket: usage.fiveHour, resetStyle: .relative,
+                         projected: forecast?.projectedAtReset)
+                if let forecast {
                     Label(forecast.text, systemImage: forecast.isWarning
                           ? "flame.fill" : "gauge.with.dots.needle.33percent")
-                        .font(.caption)
+                        .font(forecast.isWarning ? .caption.weight(.semibold) : .caption)
                         .foregroundStyle(forecast.isWarning ? Color.orange : Color.secondary)
-                        .padding(.top, -6)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(forecast.isWarning ? 6 : 0)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(forecast.isWarning
+                            ? RoundedRectangle(cornerRadius: 6).fill(Color.orange.opacity(0.12))
+                            : nil)
+                        .padding(.top, forecast.isWarning ? 0 : -6)
                 }
             }
             if usage.sevenDay?.utilization != nil {
@@ -370,8 +378,8 @@ struct PopoverView: View {
                 Text("$\(UsageModel.compactDollars(used)) / $\(UsageModel.compactDollars(limit))")
                     .font(.callout.monospacedDigit())
             }
-            ProgressView(value: min(fraction, 1))
-                .tint(primary ? (fraction >= 0.9 ? .red : .green) : .purple)
+            UsageBar(value: fraction * 100,
+                     color: primary ? (fraction >= 0.9 ? .red : .green) : .purple)
         }
     }
 
@@ -711,10 +719,37 @@ struct TokenStat: View {
 
 enum ResetStyle { case relative, absolute }
 
+/// Capsule progress bar with an optional translucent "projected" segment
+/// (where usage is heading by reset time at the current burn rate).
+struct UsageBar: View {
+    let value: Double
+    var projected: Double? = nil
+    let color: Color
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.primary.opacity(0.1))
+                if let projected, projected > value {
+                    Capsule()
+                        .fill((projected >= 100 ? Color.red : color).opacity(0.3))
+                        .frame(width: geo.size.width * min(projected, 100) / 100)
+                }
+                Capsule()
+                    .fill(color)
+                    .frame(width: max(5, geo.size.width * min(value, 100) / 100))
+            }
+        }
+        .frame(height: 6)
+        .animation(.default, value: value)
+    }
+}
+
 struct UsageRow: View {
     let title: String
     let bucket: UsageBucket?
     let resetStyle: ResetStyle
+    var projected: Double? = nil
 
     private var value: Double { bucket?.utilization ?? 0 }
 
@@ -737,9 +772,7 @@ struct UsageRow: View {
                     .contentTransition(.numericText())
                     .animation(.default, value: value)
             }
-            ProgressView(value: min(value / 100, 1))
-                .tint(barColor)
-                .animation(.default, value: value)
+            UsageBar(value: value, projected: projected, color: barColor)
             if let resets = bucket?.resetsAt {
                 Text(resetText(resets))
                     .font(.caption)

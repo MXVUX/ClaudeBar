@@ -233,24 +233,44 @@ final class UsageModel: ObservableObject {
         return rate > 0 ? rate : 0
     }
 
-    var sessionForecast: (text: String, isWarning: Bool)? {
+    struct Forecast {
+        let text: String
+        let isWarning: Bool
+        /// Where usage is projected to land at reset time — drawn as a
+        /// translucent extension of the session progress bar.
+        let projectedAtReset: Double
+    }
+
+    var sessionForecast: Forecast? {
         guard let rate = sessionBurnRate,
               let current = usage?.fiveHour?.utilization,
               let resets = usage?.fiveHour?.resetsAt
         else { return nil }
         let rateText = String(format: "%.1f%%/h", rate)
+        let hoursLeft = max(0, resets.timeIntervalSinceNow) / 3600
+        let projected = current + rate * hoursLeft
+
         guard rate > 0.5 else {
-            return (tr("Burn rate ~\(rateText) — steady", "Burn rate ~\(rateText) — ổn định"), false)
+            return Forecast(text: tr("Burn rate ~\(rateText) — steady", "Burn rate ~\(rateText) — ổn định"),
+                            isWarning: false, projectedAtReset: projected)
         }
-        let hoursTo100 = (100 - current) / rate
-        let hitDate = Date().addingTimeInterval(hoursTo100 * 3600)
-        if hitDate < resets {
+        if projected >= 100 {
+            let hoursTo100 = (100 - current) / rate
+            let hitDate = Date().addingTimeInterval(hoursTo100 * 3600)
             let time = hitDate.formatted(date: .omitted, time: .shortened)
-            return (tr("Burn rate \(rateText) → hits 100% at ~\(time)",
-                       "Burn rate \(rateText) → chạm 100% lúc ~\(time)"), true)
+            let early = max(0, resets.timeIntervalSince(hitDate))
+            let h = Int(early) / 3600
+            let m = (Int(early) % 3600) / 60
+            let earlyText = h > 0 ? "\(h)h \(m)m" : "\(m)m"
+            return Forecast(
+                text: tr("\(rateText) → hits 100% at ~\(time), \(earlyText) before reset",
+                         "\(rateText) → chạm 100% lúc ~\(time), trước reset \(earlyText)"),
+                isWarning: true, projectedAtReset: projected)
         }
-        return (tr("Burn rate \(rateText) — safe until reset",
-                   "Burn rate \(rateText) — an toàn tới giờ reset"), false)
+        return Forecast(
+            text: tr("\(rateText) → ~\(Int(projected))% by reset — safe",
+                     "\(rateText) → dự kiến ~\(Int(projected))% lúc reset — an toàn"),
+            isWarning: false, projectedAtReset: projected)
     }
 
     static func percentText(_ value: Double?) -> String {
