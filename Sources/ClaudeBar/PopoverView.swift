@@ -128,8 +128,15 @@ struct PopoverView: View {
     }
 
     private func limitsSection(_ usage: UsageResponse) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 6) {
             SectionHeader(tr("Limits", "Giới hạn"))
+            CardBox { limitsRows(usage) }
+        }
+    }
+
+    @ViewBuilder
+    private func limitsRows(_ usage: UsageResponse) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
             if usage.fiveHour?.utilization != nil {
                 UsageRow(title: tr("Current session", "Session hiện tại"),
                          bucket: usage.fiveHour, resetStyle: .relative)
@@ -180,6 +187,7 @@ struct PopoverView: View {
                     LegendDot(color: .green, label: "Session")
                     LegendDot(color: .blue, label: tr("Weekly", "Tuần"))
                 }
+                CardBox {
                 Chart(points) { sample in
                     if let v = sample.s {
                         LineMark(x: .value("Time", sample.t), y: .value("Pct", v),
@@ -208,14 +216,16 @@ struct PopoverView: View {
                     }
                 }
                 .frame(height: 60)
+                }
             }
         }
     }
 
     private var agentsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             SectionHeader(tr("Agents running (\(agents.agents.count))",
                              "Agent đang chạy (\(agents.agents.count))"))
+            CardBox {
             ForEach(agents.agents) { agent in
                 HStack(spacing: 8) {
                     Circle()
@@ -235,11 +245,12 @@ struct PopoverView: View {
                 }
                 .help(agent.cwd)
             }
+            }
         }
     }
 
     private func todaySection(_ today: DayUsage) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack {
                 SectionHeader(tr("Today · Claude Code", "Hôm nay · Claude Code"))
                 Spacer()
@@ -249,6 +260,7 @@ struct PopoverView: View {
                     .help(tr("What today's usage would cost at API list prices — not a charge",
                              "Quy đổi theo giá niêm yết API để tham khảo — không phải tiền bị trừ"))
             }
+            CardBox {
             HStack(spacing: 12) {
                 TokenStat(label: "in", value: today.input)
                 TokenStat(label: "out", value: today.output)
@@ -279,6 +291,7 @@ struct PopoverView: View {
                 Text("\(tr("7 days", "7 ngày")) ≈ $\(tokens.weekCost, specifier: "%.2f")")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
             }
         }
     }
@@ -334,11 +347,12 @@ struct SettingsView: View {
     @State private var authError: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            accountSection
+        VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(tr("Account", "Tài khoản"))
+            CardBox { accountContent }
 
-            VStack(alignment: .leading, spacing: 8) {
-                SectionHeader(tr("Language", "Ngôn ngữ"))
+            SectionHeader(tr("Language", "Ngôn ngữ"))
+            CardBox {
                 Picker("", selection: $l10n.language) {
                     Text("English").tag(AppLanguage.en)
                     Text("Tiếng Việt").tag(AppLanguage.vi)
@@ -347,8 +361,8 @@ struct SettingsView: View {
                 .labelsHidden()
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                SectionHeader("Menu bar")
+            SectionHeader("Menu bar")
+            CardBox {
                 Toggle("Session %", isOn: $model.showSession)
                 Toggle(tr("Weekly %", "Tuần %"), isOn: $model.showWeekly)
                 Toggle(tr("Countdown to session reset", "Đếm ngược tới reset session"),
@@ -357,8 +371,8 @@ struct SettingsView: View {
             .font(.callout)
             .toggleStyle(.checkbox)
 
-            VStack(alignment: .leading, spacing: 8) {
-                SectionHeader(tr("Refresh interval", "Tần suất refresh"))
+            SectionHeader(tr("Refresh interval", "Tần suất refresh"))
+            CardBox {
                 Picker("", selection: $intervalSelection) {
                     Text("1m").tag(60.0)
                     Text("2m").tag(120.0)
@@ -371,8 +385,8 @@ struct SettingsView: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                SectionHeader(tr("General", "Chung"))
+            SectionHeader(tr("General", "Chung"))
+            CardBox {
                 Toggle(tr("Launch at login", "Khởi động cùng hệ thống"), isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { _, enabled in
                         do {
@@ -387,38 +401,37 @@ struct SettingsView: View {
                     }
                 Toggle(tr("Check for updates automatically", "Tự động kiểm tra bản cập nhật"),
                        isOn: $updates.autoCheck)
+                Divider()
+                HStack(spacing: 8) {
+                    Button(tr("Check for updates", "Kiểm tra cập nhật")) {
+                        Task { await updates.check(silent: false) }
+                    }
+                    .font(.caption)
+                    if updates.state == .checking || updates.state == .downloading {
+                        ProgressView().controlSize(.small)
+                    } else if let update = updates.available {
+                        Text("→ \(update.version)")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.blue)
+                        Button(tr("Update now", "Cập nhật ngay")) {
+                            Task { await updates.updateNow() }
+                        }
+                        .font(.caption)
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                    } else if case .failed(let message) = updates.state {
+                        Text(message).font(.caption).foregroundStyle(.red)
+                    } else if updates.lastChecked != nil {
+                        Text(tr("Up to date", "Đang là bản mới nhất"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
             }
             .font(.callout)
             .toggleStyle(.checkbox)
 
-            HStack(spacing: 8) {
-                Button(tr("Check for updates", "Kiểm tra cập nhật")) {
-                    Task { await updates.check(silent: false) }
-                }
-                .font(.caption)
-                if updates.state == .checking || updates.state == .downloading {
-                    ProgressView().controlSize(.small)
-                } else if let update = updates.available {
-                    Text("→ \(update.version)")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.blue)
-                    Button(tr("Update now", "Cập nhật ngay")) {
-                        Task { await updates.updateNow() }
-                    }
-                    .font(.caption)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                } else if case .failed(let message) = updates.state {
-                    Text(message).font(.caption).foregroundStyle(.red)
-                } else if updates.lastChecked != nil {
-                    Text(tr("Up to date", "Đang là bản mới nhất"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-            }
-
-            Divider()
             HStack(spacing: 10) {
                 Link(destination: URL(string: "https://github.com/MXVUX/ClaudeBar")!) {
                     Label("GitHub", systemImage: "chevron.left.forwardslash.chevron.right")
@@ -427,25 +440,19 @@ struct SettingsView: View {
                     Label(tr("Report a bug", "Báo lỗi"), systemImage: "ladybug")
                 }
                 Spacer()
+                Text("v\(UpdateChecker.currentVersion)")
+                    .foregroundStyle(.tertiary)
+                Button(tr("Quit", "Thoát")) { NSApp.terminate(nil) }
             }
             .font(.caption)
-
-            HStack {
-                Text("ClaudeBar \(UpdateChecker.currentVersion)")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                Spacer()
-                Button(tr("Quit", "Thoát")) { NSApp.terminate(nil) }
-                    .font(.caption)
-            }
+            .padding(.top, 2)
         }
         .onAppear { intervalSelection = model.refreshInterval }
     }
 
     @ViewBuilder
-    private var accountSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            SectionHeader(tr("Account", "Tài khoản"))
+    private var accountContent: some View {
+        Group {
             if model.usingOwnLogin {
                 HStack {
                     Label(tr("Signed in with Claude", "Đã đăng nhập với Claude"),
@@ -539,6 +546,17 @@ struct SectionHeader: View {
             .font(.caption2.weight(.semibold))
             .kerning(0.6)
             .foregroundStyle(.tertiary)
+    }
+}
+
+/// Rounded grouped box, System Settings style — section header sits outside.
+struct CardBox<Content: View>: View {
+    @ViewBuilder var content: Content
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) { content }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.06)))
     }
 }
 
