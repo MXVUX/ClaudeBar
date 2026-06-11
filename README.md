@@ -3,8 +3,9 @@
 macOS menu bar app theo dõi liên tục usage limits của Claude — hỗ trợ gói cá nhân (Pro/Max) lẫn **Enterprise**, không cần mở `/usage` trong Claude Code nữa.
 
 <p align="center">
-  <img src="docs/screenshot-max.png" alt="ClaudeBar — tài khoản Max" width="300">
-  <img src="docs/screenshot-enterprise.png" alt="ClaudeBar — tài khoản Enterprise" width="300">
+  <img src="docs/screenshot-max.png" alt="ClaudeBar — tài khoản Max" width="260">
+  <img src="docs/screenshot-enterprise.png" alt="ClaudeBar — tài khoản Enterprise" width="260">
+  <img src="docs/screenshot-settings.png" alt="ClaudeBar — Cài đặt" width="260">
 </p>
 
 **Menu bar:** gói cá nhân hiện `✳ 59% · 16% · 1h03` (session 5h · weekly · countdown tới reset), gói Enterprise hiện `✳ $0/$80` (hạn mức chi tiêu) — thêm `❗` khi sắp chạm limit.
@@ -40,7 +41,7 @@ Từ đó về sau **không cần cài tay nữa** — có bản mới app sẽ 
 Hai cách kết nối tài khoản:
 
 1. **Mặc định**: app đọc OAuth token của Claude Code từ macOS Keychain (item `Claude Code-credentials`) — **chỉ đọc**, không sửa, không tự refresh, không gửi đi đâu ngoài `api.anthropic.com`. Phù hợp người dùng Claude Code hằng ngày (Claude Code tự gia hạn token).
-2. **Sign in with Claude** (Settings ⚙ → Account): kết nối ClaudeBar trực tiếp với tài khoản Claude qua OAuth chính thức của Anthropic — app giữ token **riêng** trong Keychain item của app và tự quản lý, độc lập hoàn toàn với Claude Code. Phù hợp người chủ yếu dùng Claude app/web, hoặc muốn theo dõi tài khoản thứ hai (vd Enterprise).
+2. **Sign in with Claude** (Settings ⚙ → Account): kết nối ClaudeBar trực tiếp với tài khoản Claude qua OAuth chính thức của Anthropic — app giữ token **riêng** (file `~/Library/Application Support/ClaudeBar/credentials.json`, quyền 0600 chỉ user đọc được) và tự quản lý, độc lập hoàn toàn với Claude Code. Phù hợp người chủ yếu dùng Claude app/web, hoặc muốn theo dõi tài khoản thứ hai (vd Enterprise). Không có hộp thoại xin quyền nào cho phần này.
 
 Chi tiết:
 
@@ -55,7 +56,7 @@ Chi tiết:
 
 ```bash
 git clone https://github.com/MXVUX/ClaudeBar.git && cd ClaudeBar
-./scripts/build_dmg.sh 1.6.0   # → dist/ClaudeBar.dmg (universal: Apple Silicon + Intel)
+./scripts/build_dmg.sh 1.6.2   # → dist/ClaudeBar.dmg (universal: Apple Silicon + Intel)
 ```
 
 Yêu cầu Xcode 16+ / Swift 6. Script tự ký bằng identity `ClaudeBar Signing` nếu có trong Keychain, không thì ký ad-hoc.
