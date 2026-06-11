@@ -93,9 +93,55 @@ enum ClaudeAuth {
                               expiresAt: Date().addingTimeInterval(expiresIn - 60))
     }
 
-    // MARK: - Keychain (ClaudeBar's own item — created by us, no prompt)
+    // MARK: - Storage
+    // Own credentials live in a 0600 file under Application Support, not the
+    // Keychain: keychain item ACLs are bound to the creating build's code
+    // signature and kept re-prompting after updates ("partition list" asks
+    // for the login keychain password). A user-only file has the same
+    // effective protection and zero prompts — the approach gh and Claude
+    // Code (Linux) use for their tokens.
+
+    private static var fileURL: URL {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("ClaudeBar")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("credentials.json")
+    }
 
     static func load() -> OwnCredentials? {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        if let data = try? Data(contentsOf: fileURL),
+           let credentials = try? decoder.decode(OwnCredentials.self, from: data) {
+            return credentials
+        }
+        // Migrate the legacy Keychain item (one last prompt, then it's gone).
+        if let legacy = loadFromKeychain() {
+            save(legacy)
+            deleteKeychainItem()
+            AppLog.write("migrated own credentials from Keychain to file")
+            return legacy
+        }
+        return nil
+    }
+
+    static func save(_ credentials: OwnCredentials) {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        guard let data = try? encoder.encode(credentials) else { return }
+        try? data.write(to: fileURL, options: .atomic)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600],
+                                               ofItemAtPath: fileURL.path)
+    }
+
+    static func signOut() {
+        try? FileManager.default.removeItem(at: fileURL)
+        deleteKeychainItem()
+    }
+
+    // MARK: - Legacy Keychain item
+
+    private static func loadFromKeychain() -> OwnCredentials? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
@@ -110,21 +156,7 @@ enum ClaudeAuth {
         return try? decoder.decode(OwnCredentials.self, from: data)
     }
 
-    static func save(_ credentials: OwnCredentials) {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        guard let data = try? encoder.encode(credentials) else { return }
-        let base: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-        ]
-        SecItemDelete(base as CFDictionary)
-        var add = base
-        add[kSecValueData as String] = data
-        SecItemAdd(add as CFDictionary, nil)
-    }
-
-    static func signOut() {
+    private static func deleteKeychainItem() {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
