@@ -15,6 +15,7 @@ struct ClaudeBarApp: App {
            NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).count > 1 {
             exit(0)
         }
+        ThemeManager.shared.apply()
         // First launch: the app has no window, so tell the user where it lives.
         if !UserDefaults.standard.bool(forKey: "hasLaunchedBefore") {
             UserDefaults.standard.set(true, forKey: "hasLaunchedBefore")

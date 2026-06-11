@@ -20,8 +20,8 @@ macOS menu bar app theo dõi liên tục usage limits của Claude — hỗ tr�
 - **Today · Claude Code**: token dùng trong ngày (in/out/cache), quy đổi ≈ giá API (tham khảo), biểu đồ chi phí 7 ngày
 - **Notifications**: cảnh báo khi vượt 80% / 95%, báo khi session limit reset xong, báo khi có phiên bản mới
 - **Tự động cập nhật**: app tự kiểm tra bản mới trên GitHub, bấm Update là tự tải + tự thay + tự mở lại
-- **Ngôn ngữ**: English / Tiếng Việt (Settings ⚙ — thuật ngữ chuẩn như session, token, burn rate giữ nguyên tiếng Anh)
-- **Settings (⚙)**: tài khoản, ngôn ngữ, tuỳ chọn hiển thị menu bar, refresh interval 1m/2m/5m, khởi động cùng hệ thống
+- **Giao diện**: theme Sáng / Tối / theo Hệ thống; ngôn ngữ English / Tiếng Việt (thuật ngữ chuẩn như session, token, burn rate giữ nguyên tiếng Anh)
+- **Settings (⚙)**: tài khoản, giao diện, tuỳ chọn hiển thị menu bar, refresh interval 1m/2m/5m, khởi động cùng hệ thống
 
 ## Cài đặt
 
@@ -72,6 +72,7 @@ Yêu cầu Xcode 16+ / Swift 6. Script tự ký bằng identity `ClaudeBar Signi
 - `Sources/ClaudeBar/TokenStats.swift` — thống kê token/chi phí từ transcript
 - `Sources/ClaudeBar/HistoryStore.swift` — lưu lịch sử usage cho sparkline
 - `Sources/ClaudeBar/L10n.swift` — song ngữ EN/VI
+- `Sources/ClaudeBar/Theme.swift` — theme sáng/tối/hệ thống
 - `Sources/ClaudeBar/Notifier.swift` — macOS notifications
 - `Sources/ClaudeBar/PopoverView.swift` — UI popover + Settings (SwiftUI + Charts)
 - `scripts/build_dmg.sh` — build universal binary → .app → codesign → .dmg

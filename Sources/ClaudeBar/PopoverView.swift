@@ -339,6 +339,7 @@ struct SettingsView: View {
     @ObservedObject var model: UsageModel
     @ObservedObject var updates: UpdateChecker
     @ObservedObject private var l10n = L10n.shared
+    @ObservedObject private var themeManager = ThemeManager.shared
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var intervalSelection: Double = 60
     @State private var pendingFlow: ClaudeAuth.PendingFlow?
@@ -351,14 +352,32 @@ struct SettingsView: View {
             SectionHeader(tr("Account", "Tài khoản"))
             CardBox { accountContent }
 
-            SectionHeader(tr("Language", "Ngôn ngữ"))
+            SectionHeader(tr("Appearance", "Giao diện"))
             CardBox {
-                Picker("", selection: $l10n.language) {
-                    Text("English").tag(AppLanguage.en)
-                    Text("Tiếng Việt").tag(AppLanguage.vi)
+                HStack {
+                    Text(tr("Theme", "Màu nền")).font(.callout)
+                    Spacer()
+                    Picker("", selection: $themeManager.theme) {
+                        Text(tr("System", "Hệ thống")).tag(AppTheme.system)
+                        Text(tr("Light", "Sáng")).tag(AppTheme.light)
+                        Text(tr("Dark", "Tối")).tag(AppTheme.dark)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
+                Divider()
+                HStack {
+                    Text(tr("Language", "Ngôn ngữ")).font(.callout)
+                    Spacer()
+                    Picker("", selection: $l10n.language) {
+                        Text("English").tag(AppLanguage.en)
+                        Text("Tiếng Việt").tag(AppLanguage.vi)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                }
             }
 
             SectionHeader("Menu bar")
