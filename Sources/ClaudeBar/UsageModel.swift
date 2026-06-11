@@ -106,7 +106,10 @@ final class UsageModel: ObservableObject {
 
     private var usageCache: [AccountSource: UsageResponse] = [:]
     private var lastFetchedSource: AccountSource?
-    private var ccSubscription: String?
+    private var ccSubscription: String? = UserDefaults.standard.string(forKey: "ccSubscription")
+    // In-memory token cache: reading the Keychain every poll would re-fire
+    // the permission dialog for users whose Always Allow didn't stick.
+    private var ccCredentialsCache: ClaudeCredentials?
 
     var availableSources: [AccountSource] {
         var sources: [AccountSource] = []
@@ -272,6 +275,7 @@ final class UsageModel: ObservableObject {
                 throw UsageError.message("Invalid response")
             }
             if http.statusCode == 401 {
+                ccCredentialsCache = nil  // stale cache — re-read Keychain next poll
                 throw UsageError.message(tr("Token expired — open Claude Code to refresh it",
                                             "Token hết hạn — mở Claude Code để làm mới"))
             }
@@ -341,9 +345,16 @@ final class UsageModel: ObservableObject {
             subscriptionType = usageCache[.ownLogin]?.isSpendBased == true ? "Enterprise" : nil
             return own.accessToken
         case .claudeCode:
+            if let cached = ccCredentialsCache, let expires = cached.expiresAt,
+               expires > Date().addingTimeInterval(300) {
+                subscriptionType = cached.subscriptionType ?? ccSubscription
+                return cached.accessToken
+            }
             let cred = try KeychainTokenProvider.readCredentials()
+            ccCredentialsCache = cred
             hasClaudeCodeAccount = true
             ccSubscription = cred.subscriptionType
+            UserDefaults.standard.set(cred.subscriptionType, forKey: "ccSubscription")
             subscriptionType = cred.subscriptionType
             return cred.accessToken
         }
