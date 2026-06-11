@@ -1,5 +1,12 @@
 import Foundation
 
+struct ModelShare: Identifiable {
+    let name: String
+    var tokens = 0
+    var cost = 0.0
+    var id: String { name }
+}
+
 struct DayUsage: Identifiable {
     let day: Date
     var input = 0
@@ -7,6 +14,9 @@ struct DayUsage: Identifiable {
     var cacheRead = 0
     var cacheWrite = 0
     var cost = 0.0
+    // Keyed by display name derived from the transcript's model id, so new
+    // models show up automatically without an app update.
+    var models: [String: ModelShare] = [:]
 
     var id: Date { day }
     var total: Int { input + output + cacheRead + cacheWrite }
@@ -99,13 +109,21 @@ final class TokenStats: ObservableObject {
                 let output = usage["output_tokens"] as? Int ?? 0
                 let cacheRead = usage["cache_read_input_tokens"] as? Int ?? 0
                 let cacheWrite = usage["cache_creation_input_tokens"] as? Int ?? 0
+                let model = message["model"] as? String ?? ""
+                let entryCost = Pricing.cost(model: model, input: input, output: output,
+                                             cacheRead: cacheRead, cacheWrite: cacheWrite)
                 stats.input += input
                 stats.output += output
                 stats.cacheRead += cacheRead
                 stats.cacheWrite += cacheWrite
-                stats.cost += Pricing.cost(model: message["model"] as? String ?? "",
-                                           input: input, output: output,
-                                           cacheRead: cacheRead, cacheWrite: cacheWrite)
+                stats.cost += entryCost
+                if !model.isEmpty {
+                    let name = Pricing.displayName(model)
+                    var share = stats.models[name] ?? ModelShare(name: name)
+                    share.tokens += input + output + cacheRead + cacheWrite
+                    share.cost += entryCost
+                    stats.models[name] = share
+                }
                 byDay[day] = stats
             }
         }
@@ -126,6 +144,26 @@ enum Pricing {
         if model.contains("haiku-3") { return (0.8, 4) }
         if model.contains("haiku") { return (1, 5) }
         return (5, 25)
+    }
+
+    /// "claude-opus-4-8" → "Opus 4.8"; "claude-haiku-4-5-20251001" → "Haiku 4.5".
+    /// Works for model ids that don't exist yet — name comes from the id itself.
+    static func displayName(_ raw: String) -> String {
+        var s = raw
+        if let bracket = s.firstIndex(of: "[") { s = String(s[..<bracket]) }
+        if s.hasPrefix("claude-") { s = String(s.dropFirst(7)) }
+        s = s.replacingOccurrences(of: #"-20\d{6,}$"#, with: "", options: .regularExpression)
+        var words: [String] = []
+        var version: [String] = []
+        for part in s.split(separator: "-") {
+            if part.allSatisfy(\.isNumber) {
+                version.append(String(part))
+            } else {
+                words.append(part.prefix(1).uppercased() + part.dropFirst())
+            }
+        }
+        let name = words.joined(separator: " ")
+        return version.isEmpty ? name : "\(name) \(version.joined(separator: "."))"
     }
 
     static func cost(model: String, input: Int, output: Int, cacheRead: Int, cacheWrite: Int) -> Double {

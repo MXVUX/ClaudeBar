@@ -31,7 +31,7 @@ final class UpdateChecker: ObservableObject {
 
     private var timerTask: Task<Void, Never>?
     private var notifiedVersion: String?
-    private static let repoAPI = "https://api.github.com/repos/MXVUX/ClaudeBar/releases/latest"
+    private static let repoAPI = "https://api.github.com/repos/MXVUX/ClaudePulse/releases/latest"
 
     init() {
         if autoCheck { startTimer() }
@@ -77,7 +77,7 @@ final class UpdateChecker: ObservableObject {
         let assets = json["assets"] as? [[String: Any]] ?? []
         let dmg = assets
             .first { ($0["name"] as? String)?.hasSuffix(".dmg") == true }?["browser_download_url"] as? String
-        let page = json["html_url"] as? String ?? "https://github.com/MXVUX/ClaudeBar/releases"
+        let page = json["html_url"] as? String ?? "https://github.com/MXVUX/ClaudePulse/releases"
 
         guard Self.isNewer(latest, than: Self.currentVersion),
               let dmg, let dmgURL = URL(string: dmg), let pageURL = URL(string: page)
@@ -89,7 +89,7 @@ final class UpdateChecker: ObservableObject {
         if notifiedVersion != latest {
             notifiedVersion = latest
             Notifier.push(
-                title: tr("ClaudeBar \(latest) is available", "Có ClaudeBar \(latest) mới"),
+                title: tr("ClaudePulse \(latest) is available", "Có ClaudePulse \(latest) mới"),
                 body: tr("Click ✳ in the menu bar and press Update.",
                          "Bấm icon ✳ trên menu bar rồi bấm Cập nhật."))
         }
@@ -109,9 +109,9 @@ final class UpdateChecker: ObservableObject {
     func updateNow() async {
         guard let update = available, state != .downloading else { return }
         state = .downloading
-        let dmgPath = "/tmp/ClaudeBar-update.dmg"
-        let mount = "/tmp/ClaudeBar-update-mnt"
-        let staging = "/tmp/ClaudeBar-update.app"
+        let dmgPath = "/tmp/ClaudePulse-update.dmg"
+        let mount = "/tmp/ClaudePulse-update-mnt"
+        let staging = "/tmp/ClaudePulse-update.app"
         do {
             let (tmpFile, _) = try await URLSession.shared.download(from: update.dmgURL)
             try? FileManager.default.removeItem(atPath: dmgPath)
@@ -120,9 +120,20 @@ final class UpdateChecker: ObservableObject {
             // A stale mount from a previously failed run would block attach.
             try? runTool("/usr/bin/hdiutil", ["detach", mount, "-quiet", "-force"])
             try runTool("/usr/bin/hdiutil", ["attach", dmgPath, "-nobrowse", "-quiet", "-mountpoint", mount])
+
+            // Name-agnostic: find the app inside the DMG so the updater
+            // survives app renames (ClaudeBar → ClaudePulse → …).
+            let entries = (try? FileManager.default.contentsOfDirectory(atPath: mount)) ?? []
+            let appName = entries.first { $0 == "ClaudePulse.app" }
+                ?? entries.first { $0.hasSuffix(".app") && $0 != "ClaudeBar.app" }
+                ?? entries.first { $0.hasSuffix(".app") }
+            guard let appName else {
+                try? runTool("/usr/bin/hdiutil", ["detach", mount, "-quiet"])
+                throw UsageError.message("No app found in update image")
+            }
             do {
                 try? FileManager.default.removeItem(atPath: staging)
-                try runTool("/usr/bin/ditto", ["\(mount)/ClaudeBar.app", staging])
+                try runTool("/usr/bin/ditto", ["\(mount)/\(appName)", staging])
             } catch {
                 try? runTool("/usr/bin/hdiutil", ["detach", mount, "-quiet"])
                 throw error
@@ -131,20 +142,24 @@ final class UpdateChecker: ObservableObject {
             // Strip quarantine so Gatekeeper doesn't re-block the swapped copy.
             try? runTool("/usr/bin/xattr", ["-dr", "com.apple.quarantine", staging])
 
-            // Install over ourselves — unless we're running from a DMG, a
-            // translocated path, or anywhere read-only; then /Applications.
-            var dest = Bundle.main.bundlePath
-            let parent = (dest as NSString).deletingLastPathComponent
-            if dest.contains("/AppTranslocation/") || dest.hasPrefix("/Volumes/")
-                || !FileManager.default.isWritableFile(atPath: parent) {
-                dest = "/Applications/ClaudeBar.app"
-                AppLog.write("update: unwritable location, installing to \(dest)")
+            // Install next to ourselves under the app's (possibly new) name —
+            // unless we're running from a DMG, a translocated path, or
+            // anywhere read-only; then /Applications.
+            let currentPath = Bundle.main.bundlePath
+            var destDir = (currentPath as NSString).deletingLastPathComponent
+            if currentPath.contains("/AppTranslocation/") || currentPath.hasPrefix("/Volumes/")
+                || !FileManager.default.isWritableFile(atPath: destDir) {
+                destDir = "/Applications"
+                AppLog.write("update: unwritable location, installing to /Applications")
             }
+            let dest = (destDir as NSString).appendingPathComponent(appName)
+            let removeOld = dest != currentPath
+                ? "/bin/rm -rf \"\(currentPath)\"\n" : ""
 
             let pid = ProcessInfo.processInfo.processIdentifier
             let script = """
             #!/bin/bash
-            exec >> "$HOME/Library/Logs/ClaudeBar.log" 2>&1
+            exec >> "$HOME/Library/Logs/ClaudePulse.log" 2>&1
             echo "swap: waiting for pid \(pid)"
             while /bin/kill -0 \(pid) 2>/dev/null; do /bin/sleep 0.3; done
             /bin/sleep 1
@@ -152,7 +167,7 @@ final class UpdateChecker: ObservableObject {
             if /usr/bin/ditto "\(staging)" "\(dest).new"; then
                 /bin/rm -rf "\(dest)"
                 /bin/mv "\(dest).new" "\(dest)"
-                echo "swap: installed \(update.version) at \(dest)"
+                \(removeOld)echo "swap: installed \(update.version) at \(dest)"
             else
                 echo "swap: copy failed, keeping current app"
             fi
@@ -161,7 +176,7 @@ final class UpdateChecker: ObservableObject {
             /usr/bin/open "\(dest)" || { /bin/sleep 2; /usr/bin/open "\(dest)"; }
             echo "swap: done"
             """
-            let scriptPath = "/tmp/claudebar-swap.sh"
+            let scriptPath = "/tmp/claudepulse-swap.sh"
             try script.write(toFile: scriptPath, atomically: true, encoding: .utf8)
             try runTool("/bin/chmod", ["+x", scriptPath])
 

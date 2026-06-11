@@ -7,6 +7,7 @@ struct PopoverView: View {
     @ObservedObject var agents: AgentMonitor
     @ObservedObject var tokens: TokenStats
     @ObservedObject var updates: UpdateChecker
+    @ObservedObject var status: StatusChecker
     @ObservedObject private var l10n = L10n.shared
     @State private var showingSettings = false
 
@@ -59,6 +60,10 @@ struct PopoverView: View {
             updateBanner(update)
         }
 
+        if status.hasIssue {
+            statusBanner
+        }
+
         if model.availableSources.count > 1 {
             Picker("", selection: $model.selectedSource) {
                 ForEach(model.availableSources) { source in
@@ -83,10 +88,13 @@ struct PopoverView: View {
             }
         }
 
+        // Ordered by value: limits first, cost second, agents, then the chart.
         if let usage = model.usage {
             if usage.hasAnyDisplayable {
-                limitsSection(usage)
-                sparklineSection
+                CollapsibleSection(tr("Limits", "Giới hạn"), key: "limits",
+                                   summary: limitsSummary(usage)) {
+                    CardBox { limitsRows(usage) }
+                }
             } else {
                 CardBox {
                     Label(tr("This plan has no usage limits to display.",
@@ -98,21 +106,54 @@ struct PopoverView: View {
                 }
             }
         }
-        if !agents.agents.isEmpty {
-            agentsSection
-        }
         if let today = tokens.today {
-            todaySection(today)
+            CollapsibleSection(tr("Today · Claude Code", "Hôm nay · Claude Code"), key: "today",
+                               trailing: "≈ $\(String(format: "%.2f", today.cost))") {
+                CardBox { todayRows(today) }
+            }
+        }
+        if !agents.agents.isEmpty {
+            let working = agents.agents.filter(\.isBusy).count
+            CollapsibleSection(tr("Agents running (\(agents.agents.count))",
+                                  "Agent đang chạy (\(agents.agents.count))"),
+                               key: "agents",
+                               summary: tr("\(working) working", "\(working) đang chạy")) {
+                CardBox { agentRows }
+            }
+        }
+        if let usage = model.usage, usage.hasAnyDisplayable {
+            sparklineSection
         }
 
         Divider()
         footer
     }
 
+    private var statusBanner: some View {
+        Link(destination: StatusChecker.pageURL) {
+            Label("\(tr("Anthropic incident:", "Anthropic đang sự cố:")) \(status.summary)",
+                  systemImage: "exclamationmark.icloud.fill")
+                .font(.callout)
+                .foregroundStyle(status.indicator == "minor" ? Color.orange : Color.red)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 8)
+            .fill((status.indicator == "minor" ? Color.orange : Color.red).opacity(0.12)))
+    }
+
+    private func limitsSummary(_ usage: UsageResponse) -> String {
+        if usage.isSpendBased, let extra = usage.extraUsage, let limit = extra.monthlyLimit {
+            return "$\(UsageModel.compactDollars(extra.usedCredits ?? 0))/$\(UsageModel.compactDollars(limit))"
+        }
+        return "\(UsageModel.percentText(usage.fiveHour?.utilization)) · \(UsageModel.percentText(usage.sevenDay?.utilization))"
+    }
+
     private func updateBanner(_ update: AvailableUpdate) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
-                Label(tr("ClaudeBar \(update.version) available", "Có bản mới \(update.version)"),
+                Label(tr("ClaudePulse \(update.version) available", "Có bản mới \(update.version)"),
                       systemImage: "arrow.down.circle.fill")
                     .font(.callout.weight(.medium))
                     .foregroundStyle(.blue)
@@ -139,13 +180,6 @@ struct PopoverView: View {
         }
         .padding(8)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.blue.opacity(0.1)))
-    }
-
-    private func limitsSection(_ usage: UsageResponse) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            SectionHeader(tr("Limits", "Giới hạn"))
-            CardBox { limitsRows(usage) }
-        }
     }
 
     @ViewBuilder
@@ -194,14 +228,13 @@ struct PopoverView: View {
         let cutoff = Date().addingTimeInterval(-24 * 3600)
         let points = model.samples.filter { $0.t >= cutoff }
         if points.count >= 3, points.contains(where: { $0.s != nil || $0.w != nil }) {
-            VStack(alignment: .leading, spacing: 6) {
+            CollapsibleSection(tr("Last 24h", "24h qua"), key: "chart24h") {
+                CardBox {
                 HStack(spacing: 10) {
-                    SectionHeader(tr("Last 24h", "24h qua"))
-                    Spacer()
                     LegendDot(color: .green, label: "Session")
                     LegendDot(color: .blue, label: tr("Weekly", "Tuần"))
+                    Spacer()
                 }
-                CardBox {
                 Chart(points) { sample in
                     if let v = sample.s {
                         LineMark(x: .value("Time", sample.t), y: .value("Pct", v),
@@ -235,11 +268,8 @@ struct PopoverView: View {
         }
     }
 
-    private var agentsSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            SectionHeader(tr("Agents running (\(agents.agents.count))",
-                             "Agent đang chạy (\(agents.agents.count))"))
-            CardBox {
+    @ViewBuilder
+    private var agentRows: some View {
             ForEach(agents.agents) { agent in
                 HStack(spacing: 8) {
                     Circle()
@@ -259,22 +289,10 @@ struct PopoverView: View {
                 }
                 .help(agent.cwd)
             }
-            }
-        }
     }
 
-    private func todaySection(_ today: DayUsage) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                SectionHeader(tr("Today · Claude Code", "Hôm nay · Claude Code"))
-                Spacer()
-                Text("≈ $\(today.cost, specifier: "%.2f") \(tr("API value", "giá API"))")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .help(tr("What today's usage would cost at API list prices — not a charge",
-                             "Quy đổi theo giá niêm yết API để tham khảo — không phải tiền bị trừ"))
-            }
-            CardBox {
+    @ViewBuilder
+    private func todayRows(_ today: DayUsage) -> some View {
             HStack(spacing: 12) {
                 TokenStat(label: "in", value: today.input)
                 TokenStat(label: "out", value: today.output)
@@ -283,7 +301,22 @@ struct PopoverView: View {
                 Text("\(compactTokens(today.total)) tok")
                     .font(.callout.monospacedDigit().weight(.semibold))
             }
+            if !today.models.isEmpty {
+                Divider()
+                // Per-model breakdown — names come straight from transcript
+                // model ids, so brand-new models appear automatically.
+                ForEach(today.models.values.sorted { $0.cost > $1.cost }) { share in
+                    HStack {
+                        Text(share.name).font(.caption)
+                        Spacer()
+                        Text("\(compactTokens(share.tokens)) tok · $\(share.cost, specifier: "%.2f")")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
             if tokens.days.count >= 2 {
+                Divider()
                 Chart(tokens.days) { day in
                     BarMark(x: .value("Day", day.day, unit: .day),
                             y: .value("Cost", day.cost))
@@ -306,8 +339,6 @@ struct PopoverView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            }
-        }
     }
 
     private func extraUsageRow(_ extra: ExtraUsage, primary: Bool) -> some View {
@@ -420,6 +451,7 @@ struct SettingsView: View {
                             } else {
                                 try SMAppService.mainApp.unregister()
                             }
+                            UserDefaults.standard.set(enabled, forKey: "launchAtLoginOn")
                         } catch {
                             launchAtLogin = SMAppService.mainApp.status == .enabled
                         }
@@ -458,10 +490,10 @@ struct SettingsView: View {
             .toggleStyle(.checkbox)
 
             HStack(spacing: 10) {
-                Link(destination: URL(string: "https://github.com/MXVUX/ClaudeBar")!) {
+                Link(destination: URL(string: "https://github.com/MXVUX/ClaudePulse")!) {
                     Label("GitHub", systemImage: "chevron.left.forwardslash.chevron.right")
                 }
-                Link(destination: URL(string: "https://github.com/MXVUX/ClaudeBar/issues/new")!) {
+                Link(destination: URL(string: "https://github.com/MXVUX/ClaudePulse/issues/new")!) {
                     Label(tr("Report a bug", "Báo lỗi"), systemImage: "ladybug")
                 }
                 Spacer()
@@ -531,8 +563,8 @@ struct SettingsView: View {
                     Label(tr("Sign in with Claude…", "Đăng nhập với Claude…"),
                           systemImage: "person.crop.circle.badge.checkmark")
                 }
-                Text(tr("Connect ClaudeBar directly to your Claude account — it keeps its own sign-in, independent of Claude Code.",
-                        "Kết nối ClaudeBar trực tiếp với tài khoản Claude — app tự quản lý đăng nhập riêng, độc lập với Claude Code."))
+                Text(tr("Connect ClaudePulse directly to your Claude account — it keeps its own sign-in, independent of Claude Code.",
+                        "Kết nối ClaudePulse trực tiếp với tài khoản Claude — app tự quản lý đăng nhập riêng, độc lập với Claude Code."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -571,6 +603,60 @@ struct SectionHeader: View {
             .font(.caption2.weight(.semibold))
             .kerning(0.6)
             .foregroundStyle(.tertiary)
+    }
+}
+
+/// Section with a tappable header that collapses/expands its content; the
+/// choice is remembered per section. Collapsed headers can show a summary.
+struct CollapsibleSection<Content: View>: View {
+    private let title: String
+    private let summary: String?
+    private let trailing: String?
+    private let storageKey: String
+    private let content: Content
+    @State private var expanded: Bool
+
+    init(_ title: String, key: String, summary: String? = nil, trailing: String? = nil,
+         @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.summary = summary
+        self.trailing = trailing
+        self.storageKey = "expand.\(key)"
+        self.content = content()
+        _expanded = State(initialValue:
+            UserDefaults.standard.object(forKey: "expand.\(key)") as? Bool ?? true)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.15)) { expanded.toggle() }
+                UserDefaults.standard.set(expanded, forKey: storageKey)
+            } label: {
+                HStack(spacing: 6) {
+                    SectionHeader(title)
+                    if !expanded, let summary {
+                        Text(summary)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer()
+                    if let trailing {
+                        Text(trailing)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    Image(systemName: "chevron.down")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                        .rotationEffect(.degrees(expanded ? 0 : -90))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if expanded { content }
+        }
     }
 }
 

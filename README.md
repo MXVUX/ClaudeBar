@@ -1,11 +1,11 @@
-# ClaudeBar ✳
+# ClaudePulse ✳
 
 macOS menu bar app theo dõi liên tục usage limits của Claude — hỗ trợ gói cá nhân (Pro/Max) lẫn **Enterprise**, không cần mở `/usage` trong Claude Code nữa.
 
 <p align="center">
-  <img src="docs/screenshot-max.png" alt="ClaudeBar — tài khoản Max" width="260">
-  <img src="docs/screenshot-enterprise.png" alt="ClaudeBar — tài khoản Enterprise" width="260">
-  <img src="docs/screenshot-settings.png" alt="ClaudeBar — Cài đặt" width="260">
+  <img src="docs/screenshot-max.png" alt="ClaudePulse — tài khoản Max" width="260">
+  <img src="docs/screenshot-enterprise.png" alt="ClaudePulse — tài khoản Enterprise" width="260">
+  <img src="docs/screenshot-settings.png" alt="ClaudePulse — Cài đặt" width="260">
 </p>
 
 **Menu bar:** gói cá nhân hiện `✳ 59% · 16% · 1h03` (session 5h · weekly · countdown tới reset), gói Enterprise hiện `✳ $0/$80` (hạn mức chi tiêu) — thêm `❗` khi sắp chạm limit.
@@ -17,7 +17,9 @@ macOS menu bar app theo dõi liên tục usage limits của Claude — hỗ tr�
 - **Burn rate + dự báo**: tốc độ tiêu %/giờ và dự đoán có chạm 100% trước giờ reset không
 - **Last 24h**: biểu đồ lịch sử session + weekly
 - **Agents running**: các AI coding agent đang chạy trên máy (Claude Code, Codex, Gemini CLI, Aider) kèm thư mục dự án và trạng thái working/idle
-- **Today · Claude Code**: token dùng trong ngày (in/out/cache), quy đổi ≈ giá API (tham khảo), biểu đồ chi phí 7 ngày
+- **Today · Claude Code**: token dùng trong ngày (in/out/cache) kèm **breakdown theo từng model** (tự nhận diện model mới), quy đổi ≈ giá API (tham khảo), biểu đồ chi phí 7 ngày
+- **Service status**: tự cảnh báo trong popover khi Anthropic đang có sự cố (bình thường ẩn)
+- **Thu gọn/mở rộng** từng section, app nhớ lựa chọn; header thu gọn hiện tóm tắt nhanh
 - **Notifications**: cảnh báo khi vượt 80% / 95%, báo khi session limit reset xong, báo khi có phiên bản mới
 - **Tự động cập nhật**: app tự kiểm tra bản mới trên GitHub, bấm Update là tự tải + tự thay + tự mở lại
 - **Giao diện**: theme Sáng / Tối / theo Hệ thống; ngôn ngữ English / Tiếng Việt (thuật ngữ chuẩn như session, token, burn rate giữ nguyên tiếng Anh)
@@ -25,12 +27,11 @@ macOS menu bar app theo dõi liên tục usage limits của Claude — hỗ tr�
 
 ## Cài đặt
 
-1. Tải `ClaudeBar.dmg` từ [Releases](../../releases), mở và kéo **ClaudeBar** vào **Applications**.
+1. Tải `ClaudePulse.dmg` từ [Releases](../../releases), mở và kéo **ClaudePulse** vào **Applications**.
 2. Vì app chưa notarize (không có Apple Developer ID), lần đầu mở macOS sẽ chặn:
    - Mở **System Settings → Privacy & Security**, kéo xuống và bấm **Open Anyway**.
-   - Hoặc chạy: `xattr -d com.apple.quarantine /Applications/ClaudeBar.app`
-3. Khi macOS hỏi quyền truy cập Keychain item của Claude Code → bấm **Always Allow** (**chỉ hỏi đúng 1 lần** — app ký bằng danh tính cố định nên các bản cập nhật sau không hỏi lại).
-4. Khi app xin quyền Notifications → **Allow** (để nhận cảnh báo ngưỡng và thông báo bản mới).
+   - Hoặc chạy: `xattr -d com.apple.quarantine /Applications/ClaudePulse.app`
+3. Khi app xin quyền Notifications → **Allow** (để nhận cảnh báo ngưỡng và thông báo bản mới). Không có hộp thoại Keychain nào.
 
 Từ đó về sau **không cần cài tay nữa** — có bản mới app sẽ báo, bấm Update là xong.
 
@@ -40,8 +41,8 @@ Từ đó về sau **không cần cài tay nữa** — có bản mới app sẽ 
 
 Hai cách kết nối tài khoản:
 
-1. **Mặc định**: app đọc OAuth token của Claude Code từ macOS Keychain (item `Claude Code-credentials`) — **chỉ đọc**, không sửa, không tự refresh, không gửi đi đâu ngoài `api.anthropic.com`. Phù hợp người dùng Claude Code hằng ngày (Claude Code tự gia hạn token).
-2. **Sign in with Claude** (Settings ⚙ → Account): kết nối ClaudeBar trực tiếp với tài khoản Claude qua OAuth chính thức của Anthropic — app giữ token **riêng** (file `~/Library/Application Support/ClaudeBar/credentials.json`, quyền 0600 chỉ user đọc được) và tự quản lý, độc lập hoàn toàn với Claude Code. Phù hợp người chủ yếu dùng Claude app/web, hoặc muốn theo dõi tài khoản thứ hai (vd Enterprise). Không có hộp thoại xin quyền nào cho phần này.
+1. **Mặc định**: app đọc OAuth token của Claude Code từ macOS Keychain (item `Claude Code-credentials`, đọc qua công cụ `security` của Apple nên không có hộp thoại xin quyền) — **chỉ đọc**, không sửa, không tự refresh, không gửi đi đâu ngoài `api.anthropic.com`. Phù hợp người dùng Claude Code hằng ngày (Claude Code tự gia hạn token).
+2. **Sign in with Claude** (Settings ⚙ → Account): kết nối ClaudePulse trực tiếp với tài khoản Claude qua OAuth chính thức của Anthropic — app giữ token **riêng** (file `~/Library/Application Support/ClaudePulse/credentials.json`, quyền 0600 chỉ user đọc được) và tự quản lý, độc lập hoàn toàn với Claude Code. Phù hợp người chủ yếu dùng Claude app/web, hoặc muốn theo dõi tài khoản thứ hai (vd Enterprise). Không có hộp thoại xin quyền nào cho phần này.
 
 Chi tiết:
 
@@ -49,14 +50,14 @@ Chi tiết:
 - Thống kê token đọc từ transcript local của Claude Code (`~/.claude/projects/**/*.jsonl`) — chỉ đọc. Con số $ là quy đổi theo giá niêm yết API để tham khảo, không phải tiền bị trừ.
 - Danh sách agent lấy từ process list của chính user (libproc) — không cần quyền đặc biệt.
 - Kiểm tra bản mới qua GitHub Releases API (ẩn danh, tắt được trong Settings); bản cập nhật tải trực tiếp từ Releases của repo này.
-- Lịch sử usage lưu local tại `~/Library/Application Support/ClaudeBar/history.json` (48h). Log tại `~/Library/Logs/ClaudeBar.log`.
+- Lịch sử usage lưu local tại `~/Library/Application Support/ClaudePulse/history.json` (48h). Log tại `~/Library/Logs/ClaudePulse.log`.
 - Không thu thập, không gửi telemetry. Toàn bộ source code trong repo này.
 
 ## Build từ source
 
 ```bash
-git clone https://github.com/MXVUX/ClaudeBar.git && cd ClaudeBar
-./scripts/build_dmg.sh 1.6.2   # → dist/ClaudeBar.dmg (universal: Apple Silicon + Intel)
+git clone https://github.com/MXVUX/ClaudePulse.git && cd ClaudePulse
+./scripts/build_dmg.sh 2.0.0   # → dist/ClaudePulse.dmg (universal: Apple Silicon + Intel)
 ```
 
 Yêu cầu Xcode 16+ / Swift 6. Script tự ký bằng identity `ClaudeBar Signing` nếu có trong Keychain, không thì ký ad-hoc.
@@ -69,6 +70,7 @@ Yêu cầu Xcode 16+ / Swift 6. Script tự ký bằng identity `ClaudeBar Signi
 - `Sources/ClaudeBar/KeychainTokenProvider.swift` — đọc token Claude Code từ Keychain
 - `Sources/ClaudeBar/UpdateChecker.swift` — kiểm tra bản mới + tự cập nhật
 - `Sources/ClaudeBar/AgentMonitor.swift` — quét agent đang chạy (libproc)
+- `Sources/ClaudeBar/StatusChecker.swift` — theo dõi status page của Anthropic
 - `Sources/ClaudeBar/TokenStats.swift` — thống kê token/chi phí từ transcript
 - `Sources/ClaudeBar/HistoryStore.swift` — lưu lịch sử usage cho sparkline
 - `Sources/ClaudeBar/L10n.swift` — song ngữ EN/VI
