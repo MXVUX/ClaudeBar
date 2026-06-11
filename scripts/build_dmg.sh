@@ -41,8 +41,16 @@ swift "$ROOT/scripts/make_icon.swift" "$DIST"
 iconutil -c icns "$DIST/AppIcon.iconset" -o "$APP/Contents/Resources/AppIcon.icns"
 rm -rf "$DIST/AppIcon.iconset"
 
-echo "==> Codesigning (ad-hoc)"
-codesign --force --deep -s - "$APP"
+# A stable signing identity keeps the app's designated requirement constant
+# across versions, so the Keychain "Always Allow" survives updates. Ad-hoc
+# signatures change every build and re-trigger the prompt.
+if security find-identity -v -p codesigning 2>/dev/null | grep -q "ClaudeBar Signing"; then
+    echo "==> Codesigning (ClaudeBar Signing)"
+    codesign --force --deep -s "ClaudeBar Signing" "$APP"
+else
+    echo "==> Codesigning (ad-hoc — Keychain prompt will repeat after updates)"
+    codesign --force --deep -s - "$APP"
+fi
 
 echo "==> Creating DMG"
 STAGING="$DIST/dmg-staging"
