@@ -21,6 +21,9 @@ struct PopoverView: View {
         }
         .padding(16)
         .frame(width: 312)
+        // Closing the popover while in Settings shouldn't strand the next
+        // open there — always come back to the main view.
+        .onDisappear { showingSettings = false }
     }
 
     // MARK: - Header
