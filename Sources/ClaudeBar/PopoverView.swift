@@ -354,30 +354,22 @@ struct SettingsView: View {
 
             SectionHeader(tr("Appearance", "Giao diện"))
             CardBox {
-                HStack {
-                    Text(tr("Theme", "Màu nền")).font(.callout)
-                    Spacer()
-                    Picker("", selection: $themeManager.theme) {
-                        Text(tr("System", "Hệ thống")).tag(AppTheme.system)
-                        Text(tr("Light", "Sáng")).tag(AppTheme.light)
-                        Text(tr("Dark", "Tối")).tag(AppTheme.dark)
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .fixedSize()
+                Text(tr("Theme", "Màu nền")).font(.callout)
+                Picker("", selection: $themeManager.theme) {
+                    Text(tr("System", "Hệ thống")).tag(AppTheme.system)
+                    Text(tr("Light", "Sáng")).tag(AppTheme.light)
+                    Text(tr("Dark", "Tối")).tag(AppTheme.dark)
                 }
+                .pickerStyle(.segmented)
+                .labelsHidden()
                 Divider()
-                HStack {
-                    Text(tr("Language", "Ngôn ngữ")).font(.callout)
-                    Spacer()
-                    Picker("", selection: $l10n.language) {
-                        Text("English").tag(AppLanguage.en)
-                        Text("Tiếng Việt").tag(AppLanguage.vi)
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .fixedSize()
+                Text(tr("Language", "Ngôn ngữ")).font(.callout)
+                Picker("", selection: $l10n.language) {
+                    Text("English").tag(AppLanguage.en)
+                    Text("Tiếng Việt").tag(AppLanguage.vi)
                 }
+                .pickerStyle(.segmented)
+                .labelsHidden()
             }
 
             SectionHeader("Menu bar")
