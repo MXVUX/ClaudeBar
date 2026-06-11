@@ -93,6 +93,11 @@ final class UsageModel: ObservableObject {
     @Published var subscriptionType: String?
     @Published var samples: [Sample] = []
     @Published var usingOwnLogin = ClaudeAuth.load() != nil
+    // Sign-in flow state lives here, not in the view: the popover closes the
+    // moment the user clicks over to the browser, and view @State (including
+    // the PKCE verifier) would be destroyed with it.
+    @Published var pendingAuthFlow: ClaudeAuth.PendingFlow?
+    @Published var pendingAuthCode = ""
     @Published var hasClaudeCodeAccount = KeychainTokenProvider.itemExists()
     @Published var selectedSource: AccountSource = .claudeCode {
         didSet {

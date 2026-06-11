@@ -23,8 +23,10 @@ struct PopoverView: View {
         .padding(16)
         .frame(width: 312)
         // Closing the popover while in Settings shouldn't strand the next
-        // open there — always come back to the main view.
+        // open there — always come back to the main view…
         .onDisappear { showingSettings = false }
+        // …except mid sign-in: reopen straight at the paste box.
+        .onAppear { if model.pendingAuthFlow != nil { showingSettings = true } }
     }
 
     // MARK: - Header
@@ -411,8 +413,6 @@ struct SettingsView: View {
     @ObservedObject private var themeManager = ThemeManager.shared
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var intervalSelection: Double = 60
-    @State private var pendingFlow: ClaudeAuth.PendingFlow?
-    @State private var pastedCode = ""
     @State private var authBusy = false
     @State private var authError: String?
 
@@ -553,20 +553,33 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-            } else if let flow = pendingFlow {
-                Text(tr("1. Approve in the browser   2. Copy the code   3. Paste it here:",
-                        "1. Bấm đồng ý trong trình duyệt   2. Copy code   3. Dán vào đây:"))
+            } else if let flow = model.pendingAuthFlow {
+                Text(tr("1. Approve in the browser   2. Copy the code   3. Paste it here (this box survives closing the popover):",
+                        "1. Bấm đồng ý trong trình duyệt   2. Copy code   3. Dán vào đây (đóng popover mở lại vẫn còn khung này):"))
                     .font(.caption)
                     .fixedSize(horizontal: false, vertical: true)
-                TextField(tr("Paste code…", "Dán code…"), text: $pastedCode)
-                    .textFieldStyle(.roundedBorder)
+                HStack(spacing: 6) {
+                    TextField(tr("Paste code…", "Dán code…"), text: $model.pendingAuthCode)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.caption)
+                    Button {
+                        if let clip = NSPasteboard.general.string(forType: .string) {
+                            model.pendingAuthCode = clip.trimmingCharacters(in: .whitespacesAndNewlines)
+                        }
+                    } label: {
+                        Label(tr("Paste", "Dán"), systemImage: "doc.on.clipboard")
+                    }
                     .font(.caption)
+                    .help(tr("Paste from clipboard", "Dán từ clipboard"))
+                }
                 HStack {
                     Button(tr("Confirm", "Xác nhận")) { confirmSignIn(flow) }
-                        .disabled(pastedCode.isEmpty || authBusy)
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .disabled(model.pendingAuthCode.isEmpty || authBusy)
                     Button(tr("Cancel", "Huỷ")) {
-                        pendingFlow = nil
-                        pastedCode = ""
+                        model.pendingAuthFlow = nil
+                        model.pendingAuthCode = ""
                         authError = nil
                     }
                     if authBusy { ProgressView().controlSize(.small) }
@@ -581,7 +594,7 @@ struct SettingsView: View {
             } else {
                 Button {
                     let flow = ClaudeAuth.beginFlow()
-                    pendingFlow = flow
+                    model.pendingAuthFlow = flow
                     NSWorkspace.shared.open(flow.url)
                 } label: {
                     Label(tr("Sign in with Claude…", "Đăng nhập với Claude…"),
@@ -601,11 +614,11 @@ struct SettingsView: View {
         authError = nil
         Task {
             do {
-                let credentials = try await ClaudeAuth.exchange(pasted: pastedCode, flow: flow)
+                let credentials = try await ClaudeAuth.exchange(pasted: model.pendingAuthCode, flow: flow)
                 ClaudeAuth.save(credentials)
                 model.usingOwnLogin = true
-                pendingFlow = nil
-                pastedCode = ""
+                model.pendingAuthFlow = nil
+                model.pendingAuthCode = ""
                 AppLog.write("own login established")
                 model.selectedSource = .ownLogin
                 await model.refresh()
