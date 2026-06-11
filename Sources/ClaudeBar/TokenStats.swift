@@ -117,7 +117,9 @@ final class TokenStats: ObservableObject {
                 stats.cacheRead += cacheRead
                 stats.cacheWrite += cacheWrite
                 stats.cost += entryCost
-                if !model.isEmpty {
+                // "<synthetic>" marks locally-generated messages (errors,
+                // system notices) — not real API calls; skip in the breakdown.
+                if !model.isEmpty, !model.hasPrefix("<") {
                     let name = Pricing.displayName(model)
                     var share = stats.models[name] ?? ModelShare(name: name)
                     share.tokens += input + output + cacheRead + cacheWrite

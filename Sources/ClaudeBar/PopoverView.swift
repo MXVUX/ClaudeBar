@@ -125,7 +125,7 @@ struct PopoverView: View {
         }
         if let today = tokens.today {
             CollapsibleSection(tr("Today · Claude Code", "Hôm nay · Claude Code"), key: "today",
-                               trailing: "≈ $\(String(format: "%.2f", today.cost))") {
+                               trailing: "≈ $\(String(format: "%.2f", today.cost)) \(tr("if on API", "nếu xài API"))") {
                 CardBox { todayRows(today) }
             }
         }
@@ -331,7 +331,8 @@ struct PopoverView: View {
                 Divider()
                 // Per-model breakdown — names come straight from transcript
                 // model ids, so brand-new models appear automatically.
-                ForEach(today.models.values.sorted { $0.cost > $1.cost }) { share in
+                ForEach(today.models.values.filter { $0.tokens > 0 }
+                    .sorted { $0.cost > $1.cost }) { share in
                     HStack {
                         Text(share.name).font(.caption)
                         Spacer()
