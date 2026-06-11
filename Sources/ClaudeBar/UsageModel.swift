@@ -50,6 +50,8 @@ struct UsageResponse: Decodable {
     let sevenDay: UsageBucket?
     let sevenDayOpus: UsageBucket?
     let sevenDaySonnet: UsageBucket?
+    // Enterprise: "Claude Design — included allowance" ships under this codename.
+    let omelettePromotional: UsageBucket?
     let extraUsage: ExtraUsage?
 
     enum CodingKeys: String, CodingKey {
@@ -57,11 +59,24 @@ struct UsageResponse: Decodable {
         case sevenDay = "seven_day"
         case sevenDayOpus = "seven_day_opus"
         case sevenDaySonnet = "seven_day_sonnet"
+        case omelettePromotional = "omelette_promotional"
         case extraUsage = "extra_usage"
+    }
+
+    /// Enterprise seats have no %-based session/weekly limits — the spend
+    /// limit (extra_usage, in cents) is the primary number.
+    var isSpendBased: Bool {
+        fiveHour?.utilization == nil && sevenDay?.utilization == nil
+            && extraUsage?.isEnabled == true
     }
 }
 
 // MARK: - Model
+
+enum AccountSource: String, CaseIterable, Identifiable {
+    case claudeCode, ownLogin
+    var id: String { rawValue }
+}
 
 @MainActor
 final class UsageModel: ObservableObject {
@@ -71,6 +86,37 @@ final class UsageModel: ObservableObject {
     @Published var subscriptionType: String?
     @Published var samples: [Sample] = []
     @Published var usingOwnLogin = ClaudeAuth.load() != nil
+    @Published var hasClaudeCodeAccount = KeychainTokenProvider.itemExists()
+    @Published var selectedSource: AccountSource = .claudeCode {
+        didSet {
+            guard oldValue != selectedSource else { return }
+            UserDefaults.standard.set(selectedSource.rawValue, forKey: "selectedAccount")
+            usage = usageCache[selectedSource]
+            errorMessage = nil
+            Task { await self.refresh() }
+        }
+    }
+
+    private var usageCache: [AccountSource: UsageResponse] = [:]
+    private var lastFetchedSource: AccountSource?
+    private var ccSubscription: String?
+
+    var availableSources: [AccountSource] {
+        var sources: [AccountSource] = []
+        if hasClaudeCodeAccount { sources.append(.claudeCode) }
+        if usingOwnLogin { sources.append(.ownLogin) }
+        return sources
+    }
+
+    func sourceLabel(_ source: AccountSource) -> String {
+        switch source {
+        case .claudeCode:
+            return ccSubscription?.capitalized ?? "Claude Code"
+        case .ownLogin:
+            return usageCache[.ownLogin]?.isSpendBased == true
+                ? "Enterprise" : tr("Sign-in", "Đăng nhập")
+        }
+    }
 
     // Menu bar display options
     @Published var showSession = UserDefaults.standard.object(forKey: "showSession") as? Bool ?? true {
@@ -98,6 +144,15 @@ final class UsageModel: ObservableObject {
 
     init() {
         samples = history.samples
+        // Restore selection; if it points at a missing account, use the other.
+        let stored = AccountSource(rawValue: UserDefaults.standard.string(forKey: "selectedAccount") ?? "")
+        let own = ClaudeAuth.load() != nil
+        let cc = hasClaudeCodeAccount
+        if let stored, (stored == .ownLogin && own) || (stored == .claudeCode && cc) {
+            selectedSource = stored
+        } else if own && !cc {
+            selectedSource = .ownLogin
+        }
         Notifier.requestAuthorization()
         restartTimer()
     }
@@ -105,6 +160,11 @@ final class UsageModel: ObservableObject {
     var menuTitle: String {
         guard let u = usage else {
             return errorMessage == nil ? "✳ …" : "✳ –"
+        }
+        if u.isSpendBased, let extra = u.extraUsage, let limit = extra.monthlyLimit {
+            let used = extra.usedCredits ?? 0
+            let warn = limit > 0 && used / limit >= 0.9 ? "❗" : ""
+            return "✳ \(warn)$\(Self.compactDollars(used))/$\(Self.compactDollars(limit))"
         }
         var parts: [String] = []
         if showSession { parts.append(Self.percentText(u.fiveHour?.utilization)) }
@@ -165,6 +225,14 @@ final class UsageModel: ObservableObject {
         return "\(Int(value.rounded()))%"
     }
 
+    /// Cents → "$80" or "$12.50" (drops trailing .00 to save menu bar space).
+    static func compactDollars(_ cents: Double) -> String {
+        let dollars = cents / 100
+        return dollars == dollars.rounded()
+            ? String(format: "%.0f", dollars)
+            : String(format: "%.2f", dollars)
+    }
+
     func restartTimer() {
         timerTask?.cancel()
         let interval = refreshInterval
@@ -210,17 +278,23 @@ final class UsageModel: ObservableObject {
                 throw UsageError.message(tr("API error HTTP \(http.statusCode)",
                                             "API lỗi HTTP \(http.statusCode)"))
             }
-            let previous = usage
+            let previous = usageCache[selectedSource]
             let fresh = try JSONDecoder().decode(UsageResponse.self, from: data)
             usage = fresh
+            usageCache[selectedSource] = fresh
             lastUpdated = Date()
             errorMessage = nil
 
             history.append(session: fresh.fiveHour?.utilization,
                            weekly: fresh.sevenDay?.utilization)
             samples = history.samples
-            checkAlerts(previous: previous, current: fresh)
-            AppLog.write("fetch ok: session=\(fresh.fiveHour?.utilization ?? -1) weekly=\(fresh.sevenDay?.utilization ?? -1)")
+            // Only compare within the same account — switching tabs must not
+            // fire threshold notifications.
+            if lastFetchedSource == selectedSource, let previous {
+                checkAlerts(previous: previous, current: fresh)
+            }
+            lastFetchedSource = selectedSource
+            AppLog.write("fetch ok [\(selectedSource.rawValue)]: session=\(fresh.fiveHour?.utilization ?? -1) weekly=\(fresh.sevenDay?.utilization ?? -1) spend=\(fresh.extraUsage?.usedCredits ?? -1)")
         } catch {
             let msg = (error as? UsageError)?.text ?? error.localizedDescription
             errorMessage = msg
@@ -230,10 +304,15 @@ final class UsageModel: ObservableObject {
 
     // MARK: - Credential resolution
 
-    /// Prefer ClaudeBar's own sign-in (self-refreshing, independent of Claude
-    /// Code); fall back to reading Claude Code's Keychain token.
+    /// Token for the currently selected account.
     private func resolveToken() async throws -> String {
-        if var own = ClaudeAuth.load() {
+        switch selectedSource {
+        case .ownLogin:
+            guard var own = ClaudeAuth.load() else {
+                usingOwnLogin = false
+                throw UsageError.message(tr("Signed out — sign in again in Settings",
+                                            "Đã đăng xuất — đăng nhập lại trong Cài đặt"))
+            }
             usingOwnLogin = true
             if own.expiresAt < Date().addingTimeInterval(120) {
                 do {
@@ -245,13 +324,15 @@ final class UsageModel: ObservableObject {
                                                 "Phiên đăng nhập hết hạn — đăng nhập lại trong Cài đặt"))
                 }
             }
-            subscriptionType = nil
+            subscriptionType = usageCache[.ownLogin]?.isSpendBased == true ? "Enterprise" : nil
             return own.accessToken
+        case .claudeCode:
+            let cred = try KeychainTokenProvider.readCredentials()
+            hasClaudeCodeAccount = true
+            ccSubscription = cred.subscriptionType
+            subscriptionType = cred.subscriptionType
+            return cred.accessToken
         }
-        usingOwnLogin = false
-        let cred = try KeychainTokenProvider.readCredentials()
-        subscriptionType = cred.subscriptionType
-        return cred.accessToken
     }
 
     // MARK: - Threshold notifications

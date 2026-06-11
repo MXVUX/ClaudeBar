@@ -56,6 +56,16 @@ struct PopoverView: View {
             updateBanner(update)
         }
 
+        if model.availableSources.count > 1 {
+            Picker("", selection: $model.selectedSource) {
+                ForEach(model.availableSources) { source in
+                    Text(model.sourceLabel(source)).tag(source)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+        }
+
         if let error = model.errorMessage, model.usage == nil {
             VStack(alignment: .leading, spacing: 6) {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
@@ -120,17 +130,21 @@ struct PopoverView: View {
     private func limitsSection(_ usage: UsageResponse) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             SectionHeader(tr("Limits", "Giới hạn"))
-            UsageRow(title: tr("Current session", "Session hiện tại"),
-                     bucket: usage.fiveHour, resetStyle: .relative)
-            if let forecast = model.sessionForecast {
-                Label(forecast.text, systemImage: forecast.isWarning
-                      ? "flame.fill" : "gauge.with.dots.needle.33percent")
-                    .font(.caption)
-                    .foregroundStyle(forecast.isWarning ? Color.orange : Color.secondary)
-                    .padding(.top, -6)
+            if usage.fiveHour?.utilization != nil {
+                UsageRow(title: tr("Current session", "Session hiện tại"),
+                         bucket: usage.fiveHour, resetStyle: .relative)
+                if let forecast = model.sessionForecast {
+                    Label(forecast.text, systemImage: forecast.isWarning
+                          ? "flame.fill" : "gauge.with.dots.needle.33percent")
+                        .font(.caption)
+                        .foregroundStyle(forecast.isWarning ? Color.orange : Color.secondary)
+                        .padding(.top, -6)
+                }
             }
-            UsageRow(title: tr("Weekly · All models", "Tuần · mọi model"),
-                     bucket: usage.sevenDay, resetStyle: .absolute)
+            if usage.sevenDay?.utilization != nil {
+                UsageRow(title: tr("Weekly · All models", "Tuần · mọi model"),
+                         bucket: usage.sevenDay, resetStyle: .absolute)
+            }
             if let sonnet = usage.sevenDaySonnet, sonnet.utilization != nil {
                 UsageRow(title: tr("Weekly · Sonnet", "Tuần · Sonnet"),
                          bucket: sonnet, resetStyle: .absolute)
@@ -140,7 +154,10 @@ struct PopoverView: View {
                          bucket: opus, resetStyle: .absolute)
             }
             if let extra = usage.extraUsage, extra.isEnabled == true {
-                extraUsageRow(extra)
+                extraUsageRow(extra, primary: usage.isSpendBased)
+            }
+            if let design = usage.omelettePromotional, design.utilization != nil {
+                UsageRow(title: "Claude Design", bucket: design, resetStyle: .absolute)
             }
             if let error = model.errorMessage {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
@@ -155,7 +172,7 @@ struct PopoverView: View {
     private var sparklineSection: some View {
         let cutoff = Date().addingTimeInterval(-24 * 3600)
         let points = model.samples.filter { $0.t >= cutoff }
-        if points.count >= 3 {
+        if points.count >= 3, points.contains(where: { $0.s != nil || $0.w != nil }) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 10) {
                     SectionHeader(tr("Last 24h", "24h qua"))
@@ -266,18 +283,21 @@ struct PopoverView: View {
         }
     }
 
-    private func extraUsageRow(_ extra: ExtraUsage) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+    private func extraUsageRow(_ extra: ExtraUsage, primary: Bool) -> some View {
+        // Amounts arrive in cents (8000 = $80.00).
+        let used = extra.usedCredits ?? 0
+        let limit = extra.monthlyLimit ?? 0
+        let fraction = limit > 0 ? used / limit : (extra.utilization ?? 0) / 100
+        return VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text("Extra usage credits").font(.callout.weight(.medium))
+                Text(primary ? tr("Spend limit", "Hạn mức chi tiêu") : "Extra usage credits")
+                    .font(.callout.weight(.medium))
                 Spacer()
-                if let used = extra.usedCredits, let limit = extra.monthlyLimit {
-                    Text("\(Int(used)) / \(Int(limit)) \(extra.currency ?? "")")
-                        .font(.callout.monospacedDigit())
-                }
+                Text("$\(UsageModel.compactDollars(used)) / $\(UsageModel.compactDollars(limit))")
+                    .font(.callout.monospacedDigit())
             }
-            ProgressView(value: min((extra.utilization ?? 0) / 100, 1))
-                .tint(.purple)
+            ProgressView(value: min(fraction, 1))
+                .tint(primary ? (fraction >= 0.9 ? .red : .green) : .purple)
         }
     }
 
@@ -436,7 +456,7 @@ struct SettingsView: View {
                     Button(tr("Sign out", "Đăng xuất")) {
                         ClaudeAuth.signOut()
                         model.usingOwnLogin = false
-                        Task { await model.refresh() }
+                        model.selectedSource = .claudeCode
                     }
                     .font(.caption)
                 }
@@ -499,6 +519,7 @@ struct SettingsView: View {
                 pendingFlow = nil
                 pastedCode = ""
                 AppLog.write("own login established")
+                model.selectedSource = .ownLogin
                 await model.refresh()
             } catch {
                 authError = (error as? UsageError)?.text ?? error.localizedDescription

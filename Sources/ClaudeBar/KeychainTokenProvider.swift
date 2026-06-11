@@ -8,6 +8,19 @@ struct ClaudeCredentials {
 }
 
 enum KeychainTokenProvider {
+    /// Attributes-only query — checks existence without touching the secret,
+    /// so it never triggers the Keychain permission dialog.
+    static func itemExists() -> Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "Claude Code-credentials",
+            kSecReturnAttributes as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var item: CFTypeRef?
+        return SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess
+    }
+
     static func readCredentials() throws -> ClaudeCredentials {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
