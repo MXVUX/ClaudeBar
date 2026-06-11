@@ -434,8 +434,8 @@ struct SettingsView: View {
                     }
                     .font(.caption)
                 }
-                Text(tr("ClaudeBar keeps this login alive by itself — no need to open Claude Code.",
-                        "App tự giữ đăng nhập này — không cần mở Claude Code nữa."))
+                Text(tr("Connected directly to your Claude account.",
+                        "Đang kết nối trực tiếp với tài khoản Claude của bạn."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -473,8 +473,8 @@ struct SettingsView: View {
                     Label(tr("Sign in with Claude…", "Đăng nhập với Claude…"),
                           systemImage: "person.crop.circle.badge.checkmark")
                 }
-                Text(tr("For people who rarely open Claude Code — ClaudeBar keeps its own login and refreshes it itself.",
-                        "Dành cho người ít mở Claude Code — app giữ đăng nhập riêng và tự gia hạn."))
+                Text(tr("Connect ClaudeBar directly to your Claude account — it keeps its own sign-in, independent of Claude Code.",
+                        "Kết nối ClaudeBar trực tiếp với tài khoản Claude — app tự quản lý đăng nhập riêng, độc lập với Claude Code."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
