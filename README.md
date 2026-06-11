@@ -30,7 +30,10 @@ macOS menu bar app theo dõi liên tục usage limits của Claude (Pro/Max plan
 
 ## Cách hoạt động & bảo mật
 
-- App đọc OAuth token của Claude Code từ macOS Keychain (item `Claude Code-credentials`) — **chỉ đọc**, không sửa, không tự refresh token, không gửi đi đâu ngoài `api.anthropic.com`.
+Hai cách đăng nhập:
+
+1. **Mặc định**: app đọc OAuth token của Claude Code từ macOS Keychain (item `Claude Code-credentials`) — **chỉ đọc**, không sửa, không tự refresh, không gửi đi đâu ngoài `api.anthropic.com`. Phù hợp người dùng Claude Code hằng ngày (Claude Code tự gia hạn token).
+2. **Sign in with Claude** (Settings ⚙ → Account): dành cho người ít mở Claude Code (chủ yếu dùng Claude app/web). App mở browser cho bạn đồng ý qua OAuth chính thức của Anthropic, giữ token **riêng** trong Keychain item của app và tự gia hạn — hoàn toàn không đụng tới session Claude Code.
 - Gọi `GET https://api.anthropic.com/api/oauth/usage` theo chu kỳ — cùng endpoint mà lệnh `/usage` của Claude Code dùng.
 - Nếu token hết hạn (lâu không dùng Claude Code), app hiện cảnh báo "mở Claude Code để làm mới" thay vì hiện số sai.
 - Thống kê token đọc từ transcript local của Claude Code (`~/.claude/projects/**/*.jsonl`) — chỉ đọc. Con số $ là quy đổi theo giá niêm yết API để tham khảo, không phải tiền bị trừ (gói Pro/Max trả phí cố định).

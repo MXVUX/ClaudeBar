@@ -70,6 +70,7 @@ final class UsageModel: ObservableObject {
     @Published var lastUpdated: Date?
     @Published var subscriptionType: String?
     @Published var samples: [Sample] = []
+    @Published var usingOwnLogin = ClaudeAuth.load() != nil
 
     // Menu bar display options
     @Published var showSession = UserDefaults.standard.object(forKey: "showSession") as? Bool ?? true {
@@ -183,10 +184,9 @@ final class UsageModel: ObservableObject {
             rateLimitedUntil = nil
         }
         do {
-            let cred = try KeychainTokenProvider.readCredentials()
-            subscriptionType = cred.subscriptionType
+            let token = try await resolveToken()
             var request = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/usage")!)
-            request.setValue("Bearer \(cred.accessToken)", forHTTPHeaderField: "Authorization")
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
             request.timeoutInterval = 15
 
@@ -226,6 +226,32 @@ final class UsageModel: ObservableObject {
             errorMessage = msg
             AppLog.write("fetch error: \(msg)")
         }
+    }
+
+    // MARK: - Credential resolution
+
+    /// Prefer ClaudeBar's own sign-in (self-refreshing, independent of Claude
+    /// Code); fall back to reading Claude Code's Keychain token.
+    private func resolveToken() async throws -> String {
+        if var own = ClaudeAuth.load() {
+            usingOwnLogin = true
+            if own.expiresAt < Date().addingTimeInterval(120) {
+                do {
+                    own = try await ClaudeAuth.refresh(own)
+                    ClaudeAuth.save(own)
+                    AppLog.write("own login refreshed")
+                } catch {
+                    throw UsageError.message(tr("Sign-in expired — sign in again in Settings",
+                                                "Phiên đăng nhập hết hạn — đăng nhập lại trong Cài đặt"))
+                }
+            }
+            subscriptionType = nil
+            return own.accessToken
+        }
+        usingOwnLogin = false
+        let cred = try KeychainTokenProvider.readCredentials()
+        subscriptionType = cred.subscriptionType
+        return cred.accessToken
     }
 
     // MARK: - Threshold notifications

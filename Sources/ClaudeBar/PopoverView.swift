@@ -57,8 +57,8 @@ struct PopoverView: View {
                     .foregroundStyle(.orange)
                     .font(.callout)
                     .fixedSize(horizontal: false, vertical: true)
-                Text(tr("ClaudeBar reuses your Claude Code login. Open Claude Code, run any prompt, then press ↻ here.",
-                        "ClaudeBar dùng phiên đăng nhập của Claude Code. Mở Claude Code, chạy một lệnh bất kỳ, rồi bấm ↻ ở đây."))
+                Text(tr("Open Claude Code and run any prompt, then press ↻ — or use Sign in with Claude in Settings (⚙) if you rarely open Claude Code.",
+                        "Mở Claude Code chạy một lệnh bất kỳ rồi bấm ↻ — hoặc dùng Sign in with Claude trong Cài đặt (⚙) nếu bạn ít mở Claude Code."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -270,9 +270,15 @@ struct SettingsView: View {
     @ObservedObject private var l10n = L10n.shared
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var intervalSelection: Double = 60
+    @State private var pendingFlow: ClaudeAuth.PendingFlow?
+    @State private var pastedCode = ""
+    @State private var authBusy = false
+    @State private var authError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
+            accountSection
+
             VStack(alignment: .leading, spacing: 8) {
                 SectionHeader(tr("Language", "Ngôn ngữ"))
                 Picker("", selection: $l10n.language) {
@@ -336,6 +342,91 @@ struct SettingsView: View {
             }
         }
         .onAppear { intervalSelection = model.refreshInterval }
+    }
+
+    @ViewBuilder
+    private var accountSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SectionHeader(tr("Account", "Tài khoản"))
+            if model.usingOwnLogin {
+                HStack {
+                    Label(tr("Signed in with Claude", "Đã đăng nhập với Claude"),
+                          systemImage: "checkmark.circle.fill")
+                        .font(.callout)
+                        .foregroundStyle(.green)
+                    Spacer()
+                    Button(tr("Sign out", "Đăng xuất")) {
+                        ClaudeAuth.signOut()
+                        model.usingOwnLogin = false
+                        Task { await model.refresh() }
+                    }
+                    .font(.caption)
+                }
+                Text(tr("ClaudeBar keeps this login alive by itself — no need to open Claude Code.",
+                        "App tự giữ đăng nhập này — không cần mở Claude Code nữa."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if let flow = pendingFlow {
+                Text(tr("1. Approve in the browser   2. Copy the code   3. Paste it here:",
+                        "1. Bấm đồng ý trong trình duyệt   2. Copy code   3. Dán vào đây:"))
+                    .font(.caption)
+                    .fixedSize(horizontal: false, vertical: true)
+                TextField(tr("Paste code…", "Dán code…"), text: $pastedCode)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.caption)
+                HStack {
+                    Button(tr("Confirm", "Xác nhận")) { confirmSignIn(flow) }
+                        .disabled(pastedCode.isEmpty || authBusy)
+                    Button(tr("Cancel", "Huỷ")) {
+                        pendingFlow = nil
+                        pastedCode = ""
+                        authError = nil
+                    }
+                    if authBusy { ProgressView().controlSize(.small) }
+                }
+                .font(.caption)
+                if let authError {
+                    Text(authError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                Button {
+                    let flow = ClaudeAuth.beginFlow()
+                    pendingFlow = flow
+                    NSWorkspace.shared.open(flow.url)
+                } label: {
+                    Label(tr("Sign in with Claude…", "Đăng nhập với Claude…"),
+                          systemImage: "person.crop.circle.badge.checkmark")
+                }
+                Text(tr("For people who rarely open Claude Code — ClaudeBar keeps its own login and refreshes it itself.",
+                        "Dành cho người ít mở Claude Code — app giữ đăng nhập riêng và tự gia hạn."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func confirmSignIn(_ flow: ClaudeAuth.PendingFlow) {
+        authBusy = true
+        authError = nil
+        Task {
+            do {
+                let credentials = try await ClaudeAuth.exchange(pasted: pastedCode, flow: flow)
+                ClaudeAuth.save(credentials)
+                model.usingOwnLogin = true
+                pendingFlow = nil
+                pastedCode = ""
+                AppLog.write("own login established")
+                await model.refresh()
+            } catch {
+                authError = (error as? UsageError)?.text ?? error.localizedDescription
+            }
+            authBusy = false
+        }
     }
 }
 
