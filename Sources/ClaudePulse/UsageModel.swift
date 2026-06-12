@@ -142,11 +142,30 @@ final class UsageModel: ObservableObject {
     // the permission dialog for users whose Always Allow didn't stick.
     private var ccCredentialsCache: ClaudeCredentials?
 
+    /// The signed-in profile that is the same workspace as the Claude Code
+    /// account (matched by org UUID) — the self-refreshing twin.
+    var ccMergedInto: AccountKey? {
+        guard let ccOrg = UserDefaults.standard.string(forKey: "ccOrgUUID") else { return nil }
+        return profiles.first(where: { $0.orgUUID == ccOrg }).map { .profile($0.id) }
+    }
+
     var availableKeys: [AccountKey] {
         var keys: [AccountKey] = []
-        if hasClaudeCodeAccount { keys.append(.claudeCode) }
+        // Hide the Claude Code tab when a signed-in profile is the same
+        // account — identical data, but the sign-in token never expires.
+        if hasClaudeCodeAccount && ccMergedInto == nil { keys.append(.claudeCode) }
         keys.append(contentsOf: profiles.map { .profile($0.id) })
         return keys
+    }
+
+    /// Keep the selection valid when tabs merge/unmerge.
+    private func reconcileSelection() {
+        if selectedKey == .claudeCode, let merged = ccMergedInto {
+            AppLog.write("cc tab merged into \(merged.id)")
+            selectedKey = merged
+        } else if !availableKeys.contains(selectedKey), let first = availableKeys.first {
+            selectedKey = first
+        }
     }
 
     private func baseLabel(for key: AccountKey) -> String {
@@ -195,6 +214,19 @@ final class UsageModel: ObservableObject {
         return email
     }
 
+    /// Plan name for the identity line on the main page ("Max", "Enterprise"…).
+    func planCaption(for key: AccountKey) -> String? {
+        switch key {
+        case .claudeCode:
+            return ClaudeAuth.planName(fromOrgType: UserDefaults.standard.string(forKey: "ccOrgType"))
+                ?? ccSubscription?.capitalized
+        case .profile(let pid):
+            guard let profile = profiles.first(where: { $0.id == pid }) else { return nil }
+            if let plan = ClaudeAuth.planName(fromOrgType: profile.orgType) { return plan }
+            return usageCache[pid]?.isSpendBased == true ? "Enterprise" : nil
+        }
+    }
+
     @Published private var identityVersion = 0
 
     /// Fill in who an account is (email/org) once per account.
@@ -209,6 +241,7 @@ final class UsageModel: ObservableObject {
             UserDefaults.standard.set(identity.orgUUID, forKey: "ccOrgUUID")
             identityVersion += 1
             AppLog.write("identity [cc]: \(identity.email ?? "?")")
+            reconcileSelection()
         case .profile(let pid):
             guard let index = profiles.firstIndex(where: { $0.id == pid }),
                   profiles[index].email == nil else { return }
@@ -219,6 +252,7 @@ final class UsageModel: ObservableObject {
             profiles[index].orgUUID = identity.orgUUID
             identityVersion += 1
             AppLog.write("identity [\(pid)]: \(identity.email ?? "?")")
+            reconcileSelection()
         }
     }
 
@@ -251,6 +285,9 @@ final class UsageModel: ObservableObject {
     }
     @Published var showCountdown = UserDefaults.standard.bool(forKey: "showCountdown") {
         didSet { UserDefaults.standard.set(showCountdown, forKey: "showCountdown") }
+    }
+    @Published var showProjected = UserDefaults.standard.bool(forKey: "showProjected") {
+        didSet { UserDefaults.standard.set(showProjected, forKey: "showProjected") }
     }
 
     private let history = HistoryStore()
@@ -285,6 +322,7 @@ final class UsageModel: ObservableObject {
         } else if !hasClaudeCodeAccount, let first = profiles.first {
             selectedKey = .profile(first.id)
         }
+        reconcileSelection()
         showCachedUsage()
         Notifier.requestAuthorization()
         restartTimer()
@@ -322,13 +360,24 @@ final class UsageModel: ObservableObject {
             return "✳ \(warn)$\(Self.compactDollars(used))/$\(Self.compactDollars(limit))"
         }
         var parts: [String] = []
-        if showSession { parts.append(Self.percentText(u.fiveHour?.utilization)) }
+        let forecast = sessionForecast
+        if showSession {
+            var session = Self.percentText(u.fiveHour?.utilization)
+            if showProjected, let projected = forecast?.projectedAtReset,
+               u.fiveHour?.utilization != nil {
+                session = "\(Int(u.fiveHour?.utilization ?? 0))% ~\(Int(min(projected, 999)))%"
+            }
+            parts.append(session)
+        }
         if showWeekly { parts.append(Self.percentText(u.sevenDay?.utilization)) }
         if showCountdown, let resets = u.fiveHour?.resetsAt {
             parts.append(Self.shortCountdown(to: resets))
         }
         let warn = max(u.fiveHour?.utilization ?? 0, u.sevenDay?.utilization ?? 0) >= 90 ? "❗" : ""
-        return parts.isEmpty ? "✳\(warn)" : "✳ \(warn)\(parts.joined(separator: " · "))"
+        // Reality (❗ ≥90% now) outranks the forecast; the flame only marks
+        // "projected to hit 100% before reset" while there's still headroom.
+        let icon = warn.isEmpty && forecast?.isWarning == true ? "🔥" : "✳"
+        return parts.isEmpty ? "\(icon)\(warn)" : "\(icon) \(warn)\(parts.joined(separator: " · "))"
     }
 
     static func shortCountdown(to date: Date) -> String {
@@ -341,11 +390,17 @@ final class UsageModel: ObservableObject {
     // MARK: - Burn rate & forecast (session bucket)
 
     /// %/hour over recent samples within the current 5h window; nil when not enough data.
+    /// Samples of one account only (legacy unkeyed data counts as Claude Code's).
+    func samples(forKeyID keyID: String) -> [Sample] {
+        samples.filter { $0.k == keyID || ($0.k == nil && keyID == "cc") }
+    }
+
     var sessionBurnRate: Double? {
         guard let resets = usage?.fiveHour?.resetsAt else { return nil }
         let periodStart = resets.addingTimeInterval(-5 * 3600)
         let windowStart = max(periodStart, Date().addingTimeInterval(-45 * 60))
-        let window = samples.filter { $0.t >= windowStart && $0.s != nil }
+        let window = samples(forKeyID: selectedKey.id)
+            .filter { $0.t >= windowStart && $0.s != nil }
         guard let first = window.first, let last = window.last,
               let firstValue = first.s, let lastValue = last.s,
               last.t.timeIntervalSince(first.t) >= 8 * 60
@@ -469,7 +524,8 @@ final class UsageModel: ObservableObject {
                 errorMessage = nil
             }
 
-            history.append(session: fresh.fiveHour?.utilization,
+            history.append(key: key.id,
+                           session: fresh.fiveHour?.utilization,
                            weekly: fresh.sevenDay?.utilization)
             samples = history.samples
             // Only compare within the same account — switching tabs must not

@@ -5,7 +5,13 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DIST="$ROOT/dist"
 APP="$DIST/ClaudePulse.app"
-VERSION="${1:-1.0.0}"
+# No default: an unversioned build looks older than every release and the
+# updater happily "upgrades" it back to the latest published version.
+if [[ $# -lt 1 ]]; then
+    echo "usage: $0 <version>  (e.g. 2.4.0 or 2.4.0-dev)" >&2
+    exit 1
+fi
+VERSION="$1"
 
 echo "==> Building release binary"
 cd "$ROOT"

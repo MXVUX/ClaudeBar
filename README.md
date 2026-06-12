@@ -8,16 +8,17 @@ macOS menu bar app theo dõi liên tục usage limits của Claude — hỗ tr�
   <img src="docs/screenshot-settings.png" align="top" alt="ClaudePulse — Cài đặt" width="260">
 </p>
 
-**Menu bar:** gói cá nhân hiện `✳ 59% · 16% · 1h03` (session 5h · weekly · countdown tới reset), gói Enterprise hiện `✳ $0/$80` (hạn mức chi tiêu) — thêm `❗` khi sắp chạm limit.
+**Menu bar:** gói cá nhân hiện `✳ 59% · 16% · 1h03` (session 5h · weekly · countdown tới reset), bật thêm được dự báo `✳ 40% ~46%` (đang 40%, dự kiến ~46% lúc reset); gói Enterprise hiện `✳ $0/$80` (hạn mức chi tiêu). Icon đổi `🔥` khi dự báo chạm 100% trước giờ reset, thêm `❗` khi đã sát limit.
 
 ## Tính năng
 
 - **Limits**: progress bar từng hạng mục — gói cá nhân: Current session, Weekly · All models, Weekly · Sonnet/Opus; gói Enterprise: Hạn mức chi tiêu ($ đã dùng / hạn mức), Claude Design allowance — đổi màu theo mức dùng, kèm giờ reset
-- **Nhiều tài khoản (không giới hạn)**: token Claude Code + Sign in bao nhiêu tài khoản cũng được (vd cá nhân Max + Enterprise công ty + tài khoản phụ) — mỗi tài khoản một tab **tự đặt tên theo gói thật** (Max/Pro/Enterprise), Cài đặt hiện rõ email + tổ chức của từng tài khoản; ≤3 tab dạng nút, nhiều hơn thành menu chọn
-- **Burn rate + dự báo**: tốc độ tiêu %/giờ và dự đoán có chạm 100% trước giờ reset không
-- **Last 24h**: biểu đồ lịch sử session + weekly
+- **Bố cục 2 vùng**: vùng **Tài khoản** (Giới hạn + 24h qua, đổi theo tab đang chọn) và vùng **Trên máy này** (Hôm nay + Agent, chung cho cả máy) — tách bạch rõ cái gì thuộc tài khoản, cái gì thuộc máy
+- **Nhiều tài khoản (không giới hạn)**: token Claude Code + Sign in bao nhiêu tài khoản cũng được (vd cá nhân Max + Enterprise công ty + tài khoản phụ) — mỗi tài khoản một tab **tự đặt tên theo gói thật** (Max/Pro/Enterprise), email · gói hiện ngay dưới thanh tab, tab trùng tài khoản tự gộp; ≤3 tab dạng nút, nhiều hơn thành menu chọn
+- **Burn rate + dự báo**: tốc độ tiêu %/giờ và dự đoán có chạm 100% trước giờ reset không — bật được dự báo ra menu bar (`40% ~46%`)
+- **Last 24h**: biểu đồ lịch sử session + weekly, riêng từng tài khoản
 - **Agents running**: các AI coding agent đang chạy trên máy (Claude Code, Codex, Gemini CLI, Aider) kèm thư mục dự án và trạng thái working/idle
-- **Today · Claude Code**: token dùng trong ngày (in/out/cache) kèm **breakdown theo từng model** (tự nhận diện model mới), quy đổi ≈ giá API (tham khảo), biểu đồ chi phí 7 ngày
+- **Hôm nay (trên máy này)**: token Claude Code dùng trong ngày (in/out/cache) kèm **breakdown theo từng model** (tự nhận diện model mới), quy đổi ≈ giá API (tham khảo), biểu đồ chi phí 7 ngày
 - **Service status**: tự cảnh báo trong popover khi Anthropic đang có sự cố (bình thường ẩn)
 - **Thu gọn/mở rộng** từng section, app nhớ lựa chọn; header thu gọn hiện tóm tắt nhanh
 - **Notifications**: cảnh báo khi vượt 80% / 95%, báo khi session limit reset xong, báo khi có phiên bản mới
@@ -57,7 +58,7 @@ Chi tiết:
 
 ```bash
 git clone https://github.com/MXVUX/ClaudePulse.git && cd ClaudePulse
-./scripts/build_dmg.sh 2.0.0   # → dist/ClaudePulse.dmg (universal: Apple Silicon + Intel)
+./scripts/build_dmg.sh 2.4.0   # → dist/ClaudePulse.dmg (universal: Apple Silicon + Intel)
 ```
 
 Yêu cầu Xcode 16+ / Swift 6. Script tự ký bằng identity `ClaudeBar Signing` nếu có trong Keychain (tên cert giữ nguyên từ thời tên cũ — đổi cert sẽ làm các bản đã phát hành từ chối update vì signature pinning), không thì ký ad-hoc.

@@ -4,6 +4,7 @@ struct Sample: Codable, Identifiable {
     let t: Date
     let s: Double?  // session (5h) utilization
     let w: Double?  // weekly utilization
+    var k: String?  // account key id (nil = legacy pre-multi-account data)
     var id: Date { t }
 }
 
@@ -28,10 +29,11 @@ final class HistoryStore {
         prune()
     }
 
-    func append(session: Double?, weekly: Double?) {
+    func append(key: String, session: Double?, weekly: Double?) {
         let now = Date()
-        if let last = samples.last, now.timeIntervalSince(last.t) < 55 { return }
-        samples.append(Sample(t: now, s: session, w: weekly))
+        if let last = samples.last(where: { $0.k == key }),
+           now.timeIntervalSince(last.t) < 55 { return }
+        samples.append(Sample(t: now, s: session, w: weekly, k: key))
         prune()
         save()
     }

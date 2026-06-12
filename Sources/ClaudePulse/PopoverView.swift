@@ -35,13 +35,6 @@ struct PopoverView: View {
         HStack(spacing: 8) {
             Text(showingSettings ? tr("Settings", "Cài đặt") : "Claude Usage")
                 .font(.headline)
-            if !showingSettings, let plan = model.subscriptionType {
-                Text(plan.capitalized)
-                    .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 2)
-                    .background(Capsule().fill(Color.accentColor.opacity(0.18)))
-            }
             Spacer()
             Button {
                 withAnimation(.easeInOut(duration: 0.15)) { showingSettings.toggle() }
@@ -66,6 +59,9 @@ struct PopoverView: View {
             statusBanner
         }
 
+        // Zone 1 — everything down to the zone divider follows the account tab.
+        ZoneHeader(tr("Account", "Tài khoản"), icon: "person.crop.circle")
+
         if model.availableKeys.count > 1 {
             if model.availableKeys.count <= 3 {
                 Picker("", selection: $model.selectedKey) {
@@ -83,6 +79,14 @@ struct PopoverView: View {
                 }
                 .pickerStyle(.menu)
             }
+        }
+        if let identity = accountIdentityLine {
+            Text(identity)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .padding(.top, -6)
         }
 
         // No account connected at all — guide to sign in instead of spinning.
@@ -144,8 +148,19 @@ struct PopoverView: View {
                 }
             }
         }
+        if let usage = model.usage, usage.hasAnyDisplayable {
+            sparklineSection
+        }
+        if !model.availableKeys.isEmpty {
+            footer
+        }
+
+        // Zone 2 — machine-scoped: unaffected by the account tabs above.
+        if tokens.today != nil || !agents.agents.isEmpty {
+            ZoneHeader(tr("On this Mac", "Trên máy này"), icon: "laptopcomputer")
+        }
         if let today = tokens.today {
-            CollapsibleSection(tr("Today · Claude Code", "Hôm nay · Claude Code"), key: "today",
+            CollapsibleSection(tr("Today", "Hôm nay"), key: "today",
                                trailing: "≈ $\(String(format: "%.2f", today.cost)) \(tr("if on API", "nếu xài API"))") {
                 CardBox { todayRows(today) }
             }
@@ -159,12 +174,14 @@ struct PopoverView: View {
                 CardBox { agentRows }
             }
         }
-        if let usage = model.usage, usage.hasAnyDisplayable {
-            sparklineSection
-        }
+    }
 
-        Divider()
-        footer
+    /// Who the selected tab is — shown right under the account picker.
+    private var accountIdentityLine: String? {
+        guard !model.availableKeys.isEmpty else { return nil }
+        let parts = [model.identityCaption(for: model.selectedKey),
+                     model.planCaption(for: model.selectedKey)].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     private var statusBanner: some View {
@@ -272,7 +289,7 @@ struct PopoverView: View {
     @ViewBuilder
     private var sparklineSection: some View {
         let cutoff = Date().addingTimeInterval(-24 * 3600)
-        let points = model.samples.filter { $0.t >= cutoff }
+        let points = model.samples(forKeyID: model.selectedKey.id).filter { $0.t >= cutoff }
         if points.count >= 3, points.contains(where: { $0.s != nil || $0.w != nil }) {
             CollapsibleSection(tr("Last 24h", "24h qua"), key: "chart24h") {
                 CardBox {
@@ -340,14 +357,17 @@ struct PopoverView: View {
     @ViewBuilder
     private func todayRows(_ today: DayUsage) -> some View {
             HStack {
-                Text("in \(compactTokens(today.input)) · out \(compactTokens(today.output)) · cache \(compactTokens(today.cacheRead + today.cacheWrite))")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                Text("Claude Code")
+                    .font(.callout.weight(.medium))
                 Spacer()
                 Text(compactTokens(today.total))
                     .font(.callout.monospacedDigit().weight(.semibold))
             }
+            Text("in \(compactTokens(today.input)) · out \(compactTokens(today.output)) · cache \(compactTokens(today.cacheRead + today.cacheWrite))")
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .padding(.top, -4)
             if !today.models.isEmpty {
                 Divider()
                 // Per-model breakdown — names come straight from transcript
@@ -357,7 +377,7 @@ struct PopoverView: View {
                     HStack {
                         Text(share.name).font(.caption)
                         Spacer()
-                        Text("\(compactTokens(share.tokens)) tok · $\(share.cost, specifier: "%.2f")")
+                        Text("\(compactTokens(share.tokens)) tok · $\(String(format: "%.2f", share.cost))")
                             .font(.caption.monospacedDigit())
                             .foregroundStyle(.secondary)
                     }
@@ -383,7 +403,7 @@ struct PopoverView: View {
                     }
                 }
                 .frame(height: 44)
-                Text("\(tr("7 days", "7 ngày")) ≈ $\(tokens.weekCost, specifier: "%.2f")")
+                Text("\(tr("7 days", "7 ngày")) ≈ $\(String(format: "%.2f", tokens.weekCost))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -469,6 +489,14 @@ struct SettingsView: View {
                 Toggle(tr("Weekly %", "Tuần %"), isOn: $model.showWeekly)
                 Toggle(tr("Countdown to session reset", "Đếm ngược tới reset session"),
                        isOn: $model.showCountdown)
+                Toggle(tr("Session forecast at reset", "Dự báo session lúc reset"),
+                       isOn: $model.showProjected)
+                Text(tr("[XX% ~YY%]: now XX%, projected ~YY%",
+                        "[XX% ~YY%]: đang XX%, dự kiến ~YY%"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.top, -6)
+                    .padding(.leading, 20)  // align with the toggle's label, not its checkbox
             }
             .font(.callout)
             .toggleStyle(.checkbox)
@@ -574,6 +602,13 @@ struct SettingsView: View {
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
+                    if let merged = model.ccMergedInto {
+                        Text(tr("Same account as \(model.label(for: merged)) — merged into that tab.",
+                                "Trùng tài khoản với \(model.label(for: merged)) — đã gộp vào tab đó."))
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
             // Every signed-in account, each with its own sign-out.
@@ -585,10 +620,15 @@ struct SettingsView: View {
                             .font(.callout)
                             .foregroundStyle(.green)
                         Spacer()
-                        Button(tr("Sign out", "Đăng xuất")) {
+                        Button {
                             model.removeProfile(profile.id)
+                        } label: {
+                            Image(systemName: "rectangle.portrait.and.arrow.right")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
-                        .font(.caption)
+                        .buttonStyle(.borderless)
+                        .help(tr("Sign out of this account", "Đăng xuất tài khoản này"))
                     }
                     if let caption = model.identityCaption(for: .profile(profile.id)) {
                         Text(caption)
@@ -603,9 +643,14 @@ struct SettingsView: View {
                 Divider()
             }
             if let flow = model.pendingAuthFlow {
-                Text(tr("1. Approve in the browser   2. Copy the code   3. Paste it here (this box survives closing the popover):",
-                        "1. Bấm đồng ý trong trình duyệt   2. Copy code   3. Dán vào đây (đóng popover mở lại vẫn còn khung này):"))
+                Text(tr("1. Approve in the browser   2. Copy the code   3. Paste it here:",
+                        "1. Đồng ý trong trình duyệt   2. Copy code   3. Dán vào đây:"))
                     .font(.caption)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(tr("The workspace selected in the browser is the account that gets tracked.",
+                        "Workspace đang chọn trên trình duyệt là tài khoản sẽ được theo dõi."))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 6) {
                     TextField(tr("Paste code…", "Dán code…"), text: $model.pendingAuthCode)
@@ -651,8 +696,8 @@ struct SettingsView: View {
                           : tr("Add another account…", "Thêm tài khoản…"),
                           systemImage: "person.crop.circle.badge.plus")
                 }
-                Text(tr("Connect ClaudePulse directly to your Claude account — add as many accounts as you like, each gets its own tab. Tip: the workspace selected in your browser when you approve is the one that gets tracked.",
-                        "Kết nối ClaudePulse trực tiếp với tài khoản Claude — thêm bao nhiêu tài khoản cũng được, mỗi cái một tab. Mẹo: workspace đang chọn trên trình duyệt lúc bấm đồng ý chính là tài khoản sẽ được theo dõi."))
+                Text(tr("Each signed-in account gets its own tab.",
+                        "Mỗi tài khoản đăng nhập có một tab riêng."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -689,6 +734,29 @@ struct SectionHeader: View {
             .font(.caption2.weight(.semibold))
             .kerning(0.6)
             .foregroundStyle(.tertiary)
+    }
+}
+
+/// Tier-1 zone header — marks the two scopes of the main page (account vs
+/// machine). Bigger and sentence-case so it reads as a level above the
+/// uppercase SectionHeader.
+struct ZoneHeader: View {
+    let title: String
+    let icon: String
+    init(_ title: String, icon: String) {
+        self.title = title
+        self.icon = icon
+    }
+    var body: some View {
+        HStack(spacing: 8) {
+            Label(title, systemImage: icon)
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(.primary)
+            Rectangle()
+                .fill(Color.primary.opacity(0.12))
+                .frame(height: 1)
+        }
+        .padding(.top, 2)
     }
 }
 

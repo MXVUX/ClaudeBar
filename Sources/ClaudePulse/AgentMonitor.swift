@@ -24,6 +24,15 @@ final class AgentMonitor: ObservableObject {
     private var timerTask: Task<Void, Never>?
     private static let watchedNames: Set<String> = ["claude", "codex", "gemini", "aider", "cursor-agent"]
 
+    // proc_pid_rusage reports CPU time in Mach ticks (≈41.67ns each on Apple
+    // Silicon, 1ns on Intel) — compare in nanoseconds or the busy threshold
+    // is ~42× too high on ARM.
+    private static let timebase: mach_timebase_info_data_t = {
+        var info = mach_timebase_info_data_t()
+        mach_timebase_info(&info)
+        return info
+    }()
+
     init() {
         timerTask = Task { [weak self] in
             while !Task.isCancelled {
@@ -78,7 +87,9 @@ final class AgentMonitor: ObservableObject {
                 let total = usage.ri_user_time + usage.ri_system_time
                 nextCPUTime[pid] = total
                 if let previous = lastCPUTime[pid] {
-                    busy = total &- previous > 150_000_000  // >150ms CPU in the window
+                    let deltaNs = (total &- previous)
+                        * UInt64(Self.timebase.numer) / UInt64(Self.timebase.denom)
+                    busy = deltaNs > 150_000_000  // >150ms CPU in the window
                 }
             }
 

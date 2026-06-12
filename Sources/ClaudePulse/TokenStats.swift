@@ -31,6 +31,17 @@ final class TokenStats: ObservableObject {
     @Published var days: [DayUsage] = []  // last 7 days, ascending
 
     private var timerTask: Task<Void, Never>?
+    private var state = ParseState()
+
+    /// Incremental-parse progress carried between reloads: how far each
+    /// transcript has been read, which entries were already counted, and the
+    /// running per-day totals. Transcripts are append-only, so a reload only
+    /// reads bytes written since the previous one.
+    struct ParseState {
+        var offsets: [String: UInt64] = [:]
+        var seen = Set<String>()
+        var byDay: [Date: DayUsage] = [:]
+    }
 
     init() {
         timerTask = Task { [weak self] in
@@ -50,24 +61,34 @@ final class TokenStats: ObservableObject {
 
     func reload() async {
         let started = Date()
-        let result = await Task.detached(priority: .utility) { Self.compute() }.value
-        days = result
+        let snapshot = state
+        let updated = await Task.detached(priority: .utility) { Self.compute(from: snapshot) }.value
+        state = updated
+        let weekStart = Calendar.current.startOfDay(for: Date().addingTimeInterval(-6 * 86400))
+        days = updated.byDay.values.filter { $0.day >= weekStart }.sorted { $0.day < $1.day }
         let elapsed = String(format: "%.2f", Date().timeIntervalSince(started))
-        AppLog.write("token stats: \(result.count) days, parsed in \(elapsed)s")
+        AppLog.write("token stats: \(days.count) days, parsed in \(elapsed)s")
     }
 
-    nonisolated private static func compute() -> [DayUsage] {
+    nonisolated private static func compute(from previous: ParseState) -> ParseState {
+        var state = previous
         let projectsDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/projects")
         let cutoff = Date().addingTimeInterval(-8 * 86400)
 
-        var files: [URL] = []
+        // Roll days that left the window off the running totals.
+        state.byDay = state.byDay.filter { $0.key > cutoff }
+
+        var files: [(url: URL, size: UInt64)] = []
         if let enumerator = FileManager.default.enumerator(
-            at: projectsDir, includingPropertiesForKeys: [.contentModificationDateKey]) {
+            at: projectsDir,
+            includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey]) {
             for case let url as URL in enumerator where url.pathExtension == "jsonl" {
-                let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
-                    .contentModificationDate
-                if let modified, modified > cutoff { files.append(url) }
+                let values = try? url.resourceValues(
+                    forKeys: [.contentModificationDateKey, .fileSizeKey])
+                if let modified = values?.contentModificationDate, modified > cutoff {
+                    files.append((url, UInt64(values?.fileSize ?? 0)))
+                }
             }
         }
 
@@ -76,12 +97,22 @@ final class TokenStats: ObservableObject {
         let isoPlain = ISO8601DateFormatter()
         let calendar = Calendar.current
 
-        var seen = Set<String>()
-        var byDay: [Date: DayUsage] = [:]
-
-        for file in files {
-            guard let data = try? Data(contentsOf: file),
-                  let text = String(data: data, encoding: .utf8) else { continue }
+        for (file, size) in files {
+            let offset = state.offsets[file.path] ?? 0
+            if size == offset { continue }  // nothing new
+            if size < offset {
+                // Truncated or rewritten — counted data is unreliable, start over.
+                return compute(from: ParseState())
+            }
+            guard let handle = FileHandle(forReadingAtPath: file.path) else { continue }
+            defer { try? handle.close() }
+            guard (try? handle.seek(toOffset: offset)) != nil,
+                  let data = try? handle.readToEnd(),
+                  // The writer may be mid-append — only consume complete lines.
+                  let lastNewline = data.lastIndex(of: UInt8(ascii: "\n")) else { continue }
+            let chunk = data.prefix(lastNewline + 1)
+            state.offsets[file.path] = offset + UInt64(chunk.count)
+            guard let text = String(data: chunk, encoding: .utf8) else { continue }
             for line in text.split(separator: "\n") {
                 guard line.contains("\"usage\"") else { continue }
                 guard
@@ -95,8 +126,8 @@ final class TokenStats: ObservableObject {
                 // Resumed sessions repeat earlier entries — dedup by message+request id.
                 let dedupKey = "\(message["id"] as? String ?? "")|\(object["requestId"] as? String ?? "")"
                 if dedupKey != "|" {
-                    if seen.contains(dedupKey) { continue }
-                    seen.insert(dedupKey)
+                    if state.seen.contains(dedupKey) { continue }
+                    state.seen.insert(dedupKey)
                 }
 
                 guard let timestamp = object["timestamp"] as? String,
@@ -104,7 +135,7 @@ final class TokenStats: ObservableObject {
                       date > cutoff else { continue }
 
                 let day = calendar.startOfDay(for: date)
-                var stats = byDay[day] ?? DayUsage(day: day)
+                var stats = state.byDay[day] ?? DayUsage(day: day)
                 let input = usage["input_tokens"] as? Int ?? 0
                 let output = usage["output_tokens"] as? Int ?? 0
                 let cacheRead = usage["cache_read_input_tokens"] as? Int ?? 0
@@ -126,12 +157,11 @@ final class TokenStats: ObservableObject {
                     share.cost += entryCost
                     stats.models[name] = share
                 }
-                byDay[day] = stats
+                state.byDay[day] = stats
             }
         }
 
-        let weekStart = calendar.startOfDay(for: Date().addingTimeInterval(-6 * 86400))
-        return byDay.values.filter { $0.day >= weekStart }.sorted { $0.day < $1.day }
+        return state
     }
 }
 
