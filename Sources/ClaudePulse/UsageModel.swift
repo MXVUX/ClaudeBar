@@ -149,21 +149,76 @@ final class UsageModel: ObservableObject {
         return keys
     }
 
-    func label(for key: AccountKey) -> String {
+    private func baseLabel(for key: AccountKey) -> String {
         switch key {
         case .claudeCode:
-            return ccSubscription?.capitalized ?? "Claude Code"
+            return ClaudeAuth.planName(fromOrgType: UserDefaults.standard.string(forKey: "ccOrgType"))
+                ?? ccSubscription?.capitalized ?? "Claude Code"
         case .profile(let pid):
             guard let index = profiles.firstIndex(where: { $0.id == pid }) else { return "?" }
             let profile = profiles[index]
             if !profile.label.isEmpty { return profile.label }
-            if usageCache[pid]?.isSpendBased == true {
-                let priorEnterprise = profiles.prefix(index).filter {
-                    $0.label.isEmpty && usageCache[$0.id]?.isSpendBased == true
-                }.count
-                return priorEnterprise == 0 ? "Enterprise" : "Enterprise \(priorEnterprise + 1)"
-            }
+            if let plan = ClaudeAuth.planName(fromOrgType: profile.orgType) { return plan }
+            if usageCache[pid]?.isSpendBased == true { return "Enterprise" }
             return "\(tr("Account", "Tài khoản")) \(index + 1)"
+        }
+    }
+
+    /// Display label, deduplicated across tabs ("Max", "Max 2"…).
+    func label(for key: AccountKey) -> String {
+        _ = identityVersion  // recompute when identities arrive
+        let base = baseLabel(for: key)
+        let keys = availableKeys
+        guard let index = keys.firstIndex(of: key) else { return base }
+        let priorSame = keys.prefix(index).filter { baseLabel(for: $0) == base }.count
+        return priorSame == 0 ? base : "\(base) \(priorSame + 1)"
+    }
+
+    /// Email/org details for the Settings list.
+    func identityCaption(for key: AccountKey) -> String? {
+        let email: String?
+        let orgName: String?
+        switch key {
+        case .claudeCode:
+            email = UserDefaults.standard.string(forKey: "ccEmail")
+            orgName = UserDefaults.standard.string(forKey: "ccOrgName")
+        case .profile(let pid):
+            guard let profile = profiles.first(where: { $0.id == pid }) else { return nil }
+            email = profile.email
+            orgName = profile.orgName
+        }
+        guard let email else { return nil }
+        // Personal workspaces are named "<email>'s Organization" — redundant.
+        if let orgName, !orgName.hasSuffix("'s Organization") {
+            return "\(email) · \(orgName)"
+        }
+        return email
+    }
+
+    @Published private var identityVersion = 0
+
+    /// Fill in who an account is (email/org) once per account.
+    private func ensureIdentity(for key: AccountKey, token: String) async {
+        switch key {
+        case .claudeCode:
+            guard UserDefaults.standard.string(forKey: "ccEmail") == nil else { return }
+            guard let identity = try? await ClaudeAuth.fetchIdentity(token: token) else { return }
+            UserDefaults.standard.set(identity.email, forKey: "ccEmail")
+            UserDefaults.standard.set(identity.orgName, forKey: "ccOrgName")
+            UserDefaults.standard.set(identity.orgType, forKey: "ccOrgType")
+            UserDefaults.standard.set(identity.orgUUID, forKey: "ccOrgUUID")
+            identityVersion += 1
+            AppLog.write("identity [cc]: \(identity.email ?? "?")")
+        case .profile(let pid):
+            guard let index = profiles.firstIndex(where: { $0.id == pid }),
+                  profiles[index].email == nil else { return }
+            guard let identity = try? await ClaudeAuth.fetchIdentity(token: token) else { return }
+            profiles[index].email = identity.email
+            profiles[index].orgName = identity.orgName
+            profiles[index].orgType = identity.orgType
+            profiles[index].orgUUID = identity.orgUUID
+            identityVersion += 1
+            AppLog.write("identity [\(pid)]: \(identity.email ?? "?")")
         }
     }
 
@@ -423,6 +478,7 @@ final class UsageModel: ObservableObject {
                 checkAlerts(previous: previous, current: fresh)
             }
             lastFetchedKey = key
+            await ensureIdentity(for: key, token: token)
             AppLog.write("fetch ok [\(key.id)]: session=\(fresh.fiveHour?.utilization ?? -1) weekly=\(fresh.sevenDay?.utilization ?? -1) spend=\(fresh.extraUsage?.usedCredits ?? -1)")
         } catch {
             let msg = (error as? UsageError)?.text ?? error.localizedDescription

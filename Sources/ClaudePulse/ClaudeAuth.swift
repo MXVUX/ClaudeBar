@@ -92,6 +92,40 @@ enum ClaudeAuth {
                               expiresAt: Date().addingTimeInterval(expiresIn - 60))
     }
 
+    // MARK: - Account identity
+
+    struct Identity {
+        let email: String?
+        let orgName: String?
+        let orgType: String?
+        let orgUUID: String?
+    }
+
+    /// Who this token belongs to — the same endpoint Claude Code uses.
+    static func fetchIdentity(token: String) async throws -> Identity {
+        var request = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/profile")!)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
+        request.timeoutInterval = 15
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard (response as? HTTPURLResponse)?.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { throw UsageError.message("profile fetch failed") }
+        let account = json["account"] as? [String: Any]
+        let organization = json["organization"] as? [String: Any]
+        return Identity(email: account?["email"] as? String,
+                        orgName: organization?["name"] as? String,
+                        orgType: organization?["organization_type"] as? String,
+                        orgUUID: organization?["uuid"] as? String)
+    }
+
+    /// "claude_enterprise" → "Enterprise", "claude_max" → "Max"…
+    static func planName(fromOrgType orgType: String?) -> String? {
+        guard let orgType else { return nil }
+        let stripped = orgType.hasPrefix("claude_") ? String(orgType.dropFirst(7)) : orgType
+        return stripped.prefix(1).uppercased() + stripped.dropFirst()
+    }
+
     // MARK: - Helpers
 
     private static func randomURLSafe(_ count: Int) -> String {

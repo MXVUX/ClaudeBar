@@ -556,21 +556,50 @@ struct SettingsView: View {
     @ViewBuilder
     private var accountContent: some View {
         Group {
-            // Every signed-in account, each with its own sign-out.
-            ForEach(model.profiles) { profile in
-                HStack {
-                    Label(model.label(for: .profile(profile.id)),
-                          systemImage: "checkmark.circle.fill")
-                        .font(.callout)
-                        .foregroundStyle(.green)
-                    Spacer()
-                    Button(tr("Sign out", "Đăng xuất")) {
-                        model.removeProfile(profile.id)
+            // The Claude Code account, for context (managed by Claude Code).
+            if model.hasClaudeCodeAccount {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack {
+                        Label(model.label(for: .claudeCode), systemImage: "terminal.fill")
+                            .font(.callout)
+                        Spacer()
+                        Text(tr("via Claude Code", "qua Claude Code"))
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
                     }
-                    .font(.caption)
+                    if let caption = model.identityCaption(for: .claudeCode) {
+                        Text(caption)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
                 }
             }
-            if !model.profiles.isEmpty {
+            // Every signed-in account, each with its own sign-out.
+            ForEach(model.profiles) { profile in
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack {
+                        Label(model.label(for: .profile(profile.id)),
+                              systemImage: "checkmark.circle.fill")
+                            .font(.callout)
+                            .foregroundStyle(.green)
+                        Spacer()
+                        Button(tr("Sign out", "Đăng xuất")) {
+                            model.removeProfile(profile.id)
+                        }
+                        .font(.caption)
+                    }
+                    if let caption = model.identityCaption(for: .profile(profile.id)) {
+                        Text(caption)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+            }
+            if model.hasClaudeCodeAccount || !model.profiles.isEmpty {
                 Divider()
             }
             if let flow = model.pendingAuthFlow {

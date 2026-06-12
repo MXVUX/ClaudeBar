@@ -3,8 +3,13 @@ import Security
 
 struct Profile: Codable, Identifiable {
     let id: String
-    var label: String  // empty → display name derived from plan/index
+    var label: String  // empty → display name derived from identity/plan
     var credentials: OwnCredentials
+    // Filled from /api/oauth/profile after the first successful fetch.
+    var email: String?
+    var orgName: String?
+    var orgType: String?
+    var orgUUID: String?
 }
 
 /// Signed-in accounts, any number of them, in a 0600 JSON file. Replaces the
