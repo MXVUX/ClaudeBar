@@ -80,9 +80,16 @@ struct UsageResponse: Decodable {
 
 // MARK: - Model
 
-enum AccountSource: String, CaseIterable, Identifiable {
-    case claudeCode, ownLogin
-    var id: String { rawValue }
+enum AccountKey: Hashable, Identifiable {
+    case claudeCode
+    case profile(String)
+
+    var id: String {
+        switch self {
+        case .claudeCode: return "cc"
+        case .profile(let pid): return pid
+        }
+    }
 }
 
 @MainActor
@@ -92,17 +99,20 @@ final class UsageModel: ObservableObject {
     @Published var lastUpdated: Date?
     @Published var subscriptionType: String?
     @Published var samples: [Sample] = []
-    @Published var usingOwnLogin = ClaudeAuth.load() != nil
+    /// Signed-in accounts (any number). Mutations persist automatically.
+    @Published var profiles: [Profile] = ProfileStore.load() {
+        didSet { ProfileStore.save(profiles) }
+    }
     // Sign-in flow state lives here, not in the view: the popover closes the
     // moment the user clicks over to the browser, and view @State (including
     // the PKCE verifier) would be destroyed with it.
     @Published var pendingAuthFlow: ClaudeAuth.PendingFlow?
     @Published var pendingAuthCode = ""
     @Published var hasClaudeCodeAccount = KeychainTokenProvider.itemExists()
-    @Published var selectedSource: AccountSource = .claudeCode {
+    @Published var selectedKey: AccountKey = .claudeCode {
         didSet {
-            guard oldValue != selectedSource else { return }
-            UserDefaults.standard.set(selectedSource.rawValue, forKey: "selectedAccount")
+            guard oldValue != selectedKey else { return }
+            UserDefaults.standard.set(selectedKey.id, forKey: "selectedAccount")
             showCachedUsage()
             errorMessage = nil
             Task { await self.refresh() }
@@ -112,38 +122,68 @@ final class UsageModel: ObservableObject {
     /// Last known data for the selected account — switching tabs (or a fresh
     /// launch) shows it instantly instead of a blank wait for the next fetch.
     private func showCachedUsage() {
-        usage = usageCache[selectedSource]
+        usage = usageCache[selectedKey.id]
         lastUpdated = UserDefaults.standard
-            .object(forKey: "usageCacheAt.\(selectedSource.rawValue)") as? Date
-        switch selectedSource {
+            .object(forKey: "usageCacheAt.\(selectedKey.id)") as? Date
+        switch selectedKey {
         case .claudeCode:
             subscriptionType = ccSubscription
-        case .ownLogin:
-            subscriptionType = usageCache[.ownLogin]?.isSpendBased == true ? "Enterprise" : nil
+        case .profile(let pid):
+            subscriptionType = usageCache[pid]?.isSpendBased == true ? "Enterprise" : nil
         }
     }
 
-    private var usageCache: [AccountSource: UsageResponse] = [:]
-    private var lastFetchedSource: AccountSource?
+    // Keyed by account identity (profile id), not by slot — switching the
+    // underlying account can never show another account's cached numbers.
+    private var usageCache: [String: UsageResponse] = [:]
+    private var lastFetchedKey: AccountKey?
     private var ccSubscription: String? = UserDefaults.standard.string(forKey: "ccSubscription")
     // In-memory token cache: reading the Keychain every poll would re-fire
     // the permission dialog for users whose Always Allow didn't stick.
     private var ccCredentialsCache: ClaudeCredentials?
 
-    var availableSources: [AccountSource] {
-        var sources: [AccountSource] = []
-        if hasClaudeCodeAccount { sources.append(.claudeCode) }
-        if usingOwnLogin { sources.append(.ownLogin) }
-        return sources
+    var availableKeys: [AccountKey] {
+        var keys: [AccountKey] = []
+        if hasClaudeCodeAccount { keys.append(.claudeCode) }
+        keys.append(contentsOf: profiles.map { .profile($0.id) })
+        return keys
     }
 
-    func sourceLabel(_ source: AccountSource) -> String {
-        switch source {
+    func label(for key: AccountKey) -> String {
+        switch key {
         case .claudeCode:
             return ccSubscription?.capitalized ?? "Claude Code"
-        case .ownLogin:
-            return usageCache[.ownLogin]?.isSpendBased == true
-                ? "Enterprise" : tr("Sign-in", "Đăng nhập")
+        case .profile(let pid):
+            guard let index = profiles.firstIndex(where: { $0.id == pid }) else { return "?" }
+            let profile = profiles[index]
+            if !profile.label.isEmpty { return profile.label }
+            if usageCache[pid]?.isSpendBased == true {
+                let priorEnterprise = profiles.prefix(index).filter {
+                    $0.label.isEmpty && usageCache[$0.id]?.isSpendBased == true
+                }.count
+                return priorEnterprise == 0 ? "Enterprise" : "Enterprise \(priorEnterprise + 1)"
+            }
+            return "\(tr("Account", "Tài khoản")) \(index + 1)"
+        }
+    }
+
+    func addProfile(credentials: OwnCredentials) {
+        let profile = Profile(id: UUID().uuidString, label: "", credentials: credentials)
+        profiles.append(profile)
+        selectedKey = .profile(profile.id)
+    }
+
+    func removeProfile(_ pid: String) {
+        profiles.removeAll { $0.id == pid }
+        usageCache[pid] = nil
+        UserDefaults.standard.removeObject(forKey: "usageCache.\(pid)")
+        UserDefaults.standard.removeObject(forKey: "usageCacheAt.\(pid)")
+        if selectedKey == .profile(pid) {
+            if let first = availableKeys.first {
+                selectedKey = first
+            } else {
+                usage = nil
+            }
         }
     }
 
@@ -173,25 +213,47 @@ final class UsageModel: ObservableObject {
 
     init() {
         samples = history.samples
+        migrateLegacyAccountKeys()
         // Restore per-account usage caches for instant display.
-        for source in AccountSource.allCases {
-            if let data = UserDefaults.standard.data(forKey: "usageCache.\(source.rawValue)"),
+        for key in ["cc"] + profiles.map(\.id) {
+            if let data = UserDefaults.standard.data(forKey: "usageCache.\(key)"),
                let cached = try? JSONDecoder().decode(UsageResponse.self, from: data) {
-                usageCache[source] = cached
+                usageCache[key] = cached
             }
         }
-        // Restore selection; if it points at a missing account, use the other.
-        let stored = AccountSource(rawValue: UserDefaults.standard.string(forKey: "selectedAccount") ?? "")
-        let own = ClaudeAuth.load() != nil
-        let cc = hasClaudeCodeAccount
-        if let stored, (stored == .ownLogin && own) || (stored == .claudeCode && cc) {
-            selectedSource = stored
-        } else if own && !cc {
-            selectedSource = .ownLogin
+        // Restore selection; fall back to the first available account.
+        let stored = UserDefaults.standard.string(forKey: "selectedAccount")
+        if stored == "cc", hasClaudeCodeAccount {
+            selectedKey = .claudeCode
+        } else if let stored, profiles.contains(where: { $0.id == stored }) {
+            selectedKey = .profile(stored)
+        } else if !hasClaudeCodeAccount, let first = profiles.first {
+            selectedKey = .profile(first.id)
         }
         showCachedUsage()
         Notifier.requestAuthorization()
         restartTimer()
+    }
+
+    /// ≤2.1.x stored cache/selection under slot names — remap once.
+    private func migrateLegacyAccountKeys() {
+        let ud = UserDefaults.standard
+        let pairs = [("claudeCode", "cc"), ("ownLogin", "legacy-1")]
+        for (old, new) in pairs {
+            if let data = ud.data(forKey: "usageCache.\(old)") {
+                ud.set(data, forKey: "usageCache.\(new)")
+                ud.removeObject(forKey: "usageCache.\(old)")
+            }
+            if let at = ud.object(forKey: "usageCacheAt.\(old)") {
+                ud.set(at, forKey: "usageCacheAt.\(new)")
+                ud.removeObject(forKey: "usageCacheAt.\(old)")
+            }
+        }
+        switch ud.string(forKey: "selectedAccount") {
+        case "claudeCode": ud.set("cc", forKey: "selectedAccount")
+        case "ownLogin": ud.set("legacy-1", forKey: "selectedAccount")
+        default: break
+        }
     }
 
     var menuTitle: String {
@@ -310,8 +372,11 @@ final class UsageModel: ObservableObject {
             rateLimitedUntil = nil
         }
         if force { rateLimitedUntil = nil }
+        // Pin the account for this whole fetch: the user may switch tabs
+        // mid-flight, and results must never land under another account.
+        let key = selectedKey
         do {
-            let token = try await resolveToken()
+            let token = try await resolveToken(for: key)
             var request = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/usage")!)
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
@@ -338,28 +403,30 @@ final class UsageModel: ObservableObject {
                 throw UsageError.message(tr("API error HTTP \(http.statusCode)",
                                             "API lỗi HTTP \(http.statusCode)"))
             }
-            let previous = usageCache[selectedSource]
+            let previous = usageCache[key.id]
             let fresh = try JSONDecoder().decode(UsageResponse.self, from: data)
-            usage = fresh
-            usageCache[selectedSource] = fresh
-            UserDefaults.standard.set(data, forKey: "usageCache.\(selectedSource.rawValue)")
-            UserDefaults.standard.set(Date(), forKey: "usageCacheAt.\(selectedSource.rawValue)")
-            lastUpdated = Date()
-            errorMessage = nil
+            usageCache[key.id] = fresh
+            UserDefaults.standard.set(data, forKey: "usageCache.\(key.id)")
+            UserDefaults.standard.set(Date(), forKey: "usageCacheAt.\(key.id)")
+            if key == selectedKey {
+                usage = fresh
+                lastUpdated = Date()
+                errorMessage = nil
+            }
 
             history.append(session: fresh.fiveHour?.utilization,
                            weekly: fresh.sevenDay?.utilization)
             samples = history.samples
             // Only compare within the same account — switching tabs must not
             // fire threshold notifications.
-            if lastFetchedSource == selectedSource, let previous {
+            if lastFetchedKey == key, let previous {
                 checkAlerts(previous: previous, current: fresh)
             }
-            lastFetchedSource = selectedSource
-            AppLog.write("fetch ok [\(selectedSource.rawValue)]: session=\(fresh.fiveHour?.utilization ?? -1) weekly=\(fresh.sevenDay?.utilization ?? -1) spend=\(fresh.extraUsage?.usedCredits ?? -1)")
+            lastFetchedKey = key
+            AppLog.write("fetch ok [\(key.id)]: session=\(fresh.fiveHour?.utilization ?? -1) weekly=\(fresh.sevenDay?.utilization ?? -1) spend=\(fresh.extraUsage?.usedCredits ?? -1)")
         } catch {
             let msg = (error as? UsageError)?.text ?? error.localizedDescription
-            errorMessage = msg
+            if key == selectedKey { errorMessage = msg }
             // A denied Keychain prompt would otherwise re-prompt every poll —
             // back off; the manual refresh button still tries immediately.
             if msg.contains("Always Allow") {
@@ -371,40 +438,50 @@ final class UsageModel: ObservableObject {
 
     // MARK: - Credential resolution
 
-    /// Token for the currently selected account.
-    private func resolveToken() async throws -> String {
-        switch selectedSource {
-        case .ownLogin:
-            guard var own = ClaudeAuth.load() else {
-                usingOwnLogin = false
+    /// Token for the given account.
+    private func resolveToken(for key: AccountKey) async throws -> String {
+        switch key {
+        case .profile(let pid):
+            guard let index = profiles.firstIndex(where: { $0.id == pid }) else {
                 throw UsageError.message(tr("Signed out — sign in again in Settings",
                                             "Đã đăng xuất — đăng nhập lại trong Cài đặt"))
             }
-            usingOwnLogin = true
-            if own.expiresAt < Date().addingTimeInterval(120) {
+            var credentials = profiles[index].credentials
+            if credentials.expiresAt < Date().addingTimeInterval(120) {
                 do {
-                    own = try await ClaudeAuth.refresh(own)
-                    ClaudeAuth.save(own)
-                    AppLog.write("own login refreshed")
+                    credentials = try await ClaudeAuth.refresh(credentials)
+                    profiles[index].credentials = credentials  // didSet persists
+                    AppLog.write("profile \(pid) token refreshed")
                 } catch {
                     throw UsageError.message(tr("Sign-in expired — sign in again in Settings",
                                                 "Phiên đăng nhập hết hạn — đăng nhập lại trong Cài đặt"))
                 }
             }
-            subscriptionType = usageCache[.ownLogin]?.isSpendBased == true ? "Enterprise" : nil
-            return own.accessToken
+            if key == selectedKey {
+                subscriptionType = usageCache[pid]?.isSpendBased == true ? "Enterprise" : nil
+            }
+            return credentials.accessToken
         case .claudeCode:
             if let cached = ccCredentialsCache, let expires = cached.expiresAt,
                expires > Date().addingTimeInterval(300) {
-                subscriptionType = cached.subscriptionType ?? ccSubscription
+                if key == selectedKey { subscriptionType = cached.subscriptionType ?? ccSubscription }
                 return cached.accessToken
             }
             let cred = try KeychainTokenProvider.readCredentials()
+            // Claude Code switched accounts → its cached usage is another
+            // account's data; drop it.
+            if let old = ccSubscription, let new = cred.subscriptionType, old != new {
+                usageCache["cc"] = nil
+                UserDefaults.standard.removeObject(forKey: "usageCache.cc")
+                UserDefaults.standard.removeObject(forKey: "usageCacheAt.cc")
+                if selectedKey == .claudeCode { usage = nil }
+                AppLog.write("claude code account changed (\(old) → \(new)) — cache cleared")
+            }
             ccCredentialsCache = cred
             hasClaudeCodeAccount = true
             ccSubscription = cred.subscriptionType
             UserDefaults.standard.set(cred.subscriptionType, forKey: "ccSubscription")
-            subscriptionType = cred.subscriptionType
+            if key == selectedKey { subscriptionType = cred.subscriptionType }
             return cred.accessToken
         }
     }

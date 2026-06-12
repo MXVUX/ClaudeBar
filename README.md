@@ -13,7 +13,7 @@ macOS menu bar app theo dõi liên tục usage limits của Claude — hỗ tr�
 ## Tính năng
 
 - **Limits**: progress bar từng hạng mục — gói cá nhân: Current session, Weekly · All models, Weekly · Sonnet/Opus; gói Enterprise: Hạn mức chi tiêu ($ đã dùng / hạn mức), Claude Design allowance — đổi màu theo mức dùng, kèm giờ reset
-- **Nhiều tài khoản**: có cả token Claude Code lẫn Sign in with Claude (vd cá nhân + Enterprise) → tab chuyển tài khoản đầu popover, xem được cả 2
+- **Nhiều tài khoản (không giới hạn)**: token Claude Code + Sign in bao nhiêu tài khoản cũng được (vd cá nhân Max + Enterprise công ty + tài khoản phụ) — mỗi tài khoản một tab, ≤3 tab dạng nút, nhiều hơn thành menu chọn
 - **Burn rate + dự báo**: tốc độ tiêu %/giờ và dự đoán có chạm 100% trước giờ reset không
 - **Last 24h**: biểu đồ lịch sử session + weekly
 - **Agents running**: các AI coding agent đang chạy trên máy (Claude Code, Codex, Gemini CLI, Aider) kèm thư mục dự án và trạng thái working/idle

@@ -66,17 +66,40 @@ struct PopoverView: View {
             statusBanner
         }
 
-        if model.availableSources.count > 1 {
-            Picker("", selection: $model.selectedSource) {
-                ForEach(model.availableSources) { source in
-                    Text(model.sourceLabel(source)).tag(source)
+        if model.availableKeys.count > 1 {
+            if model.availableKeys.count <= 3 {
+                Picker("", selection: $model.selectedKey) {
+                    ForEach(model.availableKeys) { key in
+                        Text(model.label(for: key)).tag(key)
+                    }
                 }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            } else {
+                Picker(tr("Account", "Tài khoản"), selection: $model.selectedKey) {
+                    ForEach(model.availableKeys) { key in
+                        Text(model.label(for: key)).tag(key)
+                    }
+                }
+                .pickerStyle(.menu)
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
         }
 
-        if let error = model.errorMessage, model.usage == nil {
+        // No account connected at all — guide to sign in instead of spinning.
+        if model.availableKeys.isEmpty {
+            CardBox {
+                Label(tr("No Claude account connected yet.",
+                         "Chưa kết nối tài khoản Claude nào."),
+                      systemImage: "person.crop.circle.badge.questionmark")
+                    .font(.callout)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button(tr("Sign in with Claude…", "Đăng nhập với Claude…")) {
+                    withAnimation(.easeInOut(duration: 0.15)) { showingSettings = true }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+        } else if let error = model.errorMessage, model.usage == nil {
             VStack(alignment: .leading, spacing: 6) {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
@@ -88,11 +111,9 @@ struct PopoverView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-        }
-
-        // No data yet (first fetch or just-switched tab) — say so instead of
-        // showing a confusing half-empty popover.
-        if model.usage == nil && model.errorMessage == nil {
+        } else if model.usage == nil && model.errorMessage == nil {
+            // No data yet (first fetch or just-switched tab) — say so instead
+            // of showing a confusing half-empty popover.
             CardBox {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
@@ -535,26 +556,24 @@ struct SettingsView: View {
     @ViewBuilder
     private var accountContent: some View {
         Group {
-            if model.usingOwnLogin {
+            // Every signed-in account, each with its own sign-out.
+            ForEach(model.profiles) { profile in
                 HStack {
-                    Label(tr("Signed in with Claude", "Đã đăng nhập với Claude"),
+                    Label(model.label(for: .profile(profile.id)),
                           systemImage: "checkmark.circle.fill")
                         .font(.callout)
                         .foregroundStyle(.green)
                     Spacer()
                     Button(tr("Sign out", "Đăng xuất")) {
-                        ClaudeAuth.signOut()
-                        model.usingOwnLogin = false
-                        model.selectedSource = .claudeCode
+                        model.removeProfile(profile.id)
                     }
                     .font(.caption)
                 }
-                Text(tr("Connected directly to your Claude account.",
-                        "Đang kết nối trực tiếp với tài khoản Claude của bạn."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else if let flow = model.pendingAuthFlow {
+            }
+            if !model.profiles.isEmpty {
+                Divider()
+            }
+            if let flow = model.pendingAuthFlow {
                 Text(tr("1. Approve in the browser   2. Copy the code   3. Paste it here (this box survives closing the popover):",
                         "1. Bấm đồng ý trong trình duyệt   2. Copy code   3. Dán vào đây (đóng popover mở lại vẫn còn khung này):"))
                     .font(.caption)
@@ -598,11 +617,13 @@ struct SettingsView: View {
                     model.pendingAuthFlow = flow
                     NSWorkspace.shared.open(flow.url)
                 } label: {
-                    Label(tr("Sign in with Claude…", "Đăng nhập với Claude…"),
-                          systemImage: "person.crop.circle.badge.checkmark")
+                    Label(model.profiles.isEmpty
+                          ? tr("Sign in with Claude…", "Đăng nhập với Claude…")
+                          : tr("Add another account…", "Thêm tài khoản…"),
+                          systemImage: "person.crop.circle.badge.plus")
                 }
-                Text(tr("Connect ClaudePulse directly to your Claude account — it keeps its own sign-in, independent of Claude Code.",
-                        "Kết nối ClaudePulse trực tiếp với tài khoản Claude — app tự quản lý đăng nhập riêng, độc lập với Claude Code."))
+                Text(tr("Connect ClaudePulse directly to your Claude account — add as many accounts as you like, each gets its own tab. Tip: the workspace selected in your browser when you approve is the one that gets tracked.",
+                        "Kết nối ClaudePulse trực tiếp với tài khoản Claude — thêm bao nhiêu tài khoản cũng được, mỗi cái một tab. Mẹo: workspace đang chọn trên trình duyệt lúc bấm đồng ý chính là tài khoản sẽ được theo dõi."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -616,12 +637,10 @@ struct SettingsView: View {
         Task {
             do {
                 let credentials = try await ClaudeAuth.exchange(pasted: model.pendingAuthCode, flow: flow)
-                ClaudeAuth.save(credentials)
-                model.usingOwnLogin = true
                 model.pendingAuthFlow = nil
                 model.pendingAuthCode = ""
-                AppLog.write("own login established")
-                model.selectedSource = .ownLogin
+                model.addProfile(credentials: credentials)
+                AppLog.write("profile added")
                 await model.refresh()
             } catch {
                 authError = (error as? UsageError)?.text ?? error.localizedDescription
