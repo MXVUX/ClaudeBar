@@ -290,6 +290,18 @@ final class UsageModel: ObservableObject {
         didSet { UserDefaults.standard.set(showProjected, forKey: "showProjected") }
     }
 
+    /// Time range for the account % chart — independent from the cost chart so
+    /// changing one zone never moves the other.
+    @Published var limitsRange: HistoryRange =
+        HistoryRange(rawValue: UserDefaults.standard.string(forKey: "limitsRange") ?? "") ?? .day {
+        didSet { UserDefaults.standard.set(limitsRange.rawValue, forKey: "limitsRange") }
+    }
+    /// Time range for the machine cost chart.
+    @Published var costRange: HistoryRange =
+        HistoryRange(rawValue: UserDefaults.standard.string(forKey: "costRange") ?? "") ?? .day {
+        didSet { UserDefaults.standard.set(costRange.rawValue, forKey: "costRange") }
+    }
+
     private let history = HistoryStore()
 
     var refreshInterval: TimeInterval {

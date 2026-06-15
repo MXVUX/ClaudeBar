@@ -156,14 +156,22 @@ struct PopoverView: View {
         }
 
         // Zone 2 — machine-scoped: unaffected by the account tabs above.
-        if tokens.today != nil || !agents.agents.isEmpty {
+        let hasTokenData = tokens.today != nil || !tokens.days.isEmpty
+        if hasTokenData || !agents.agents.isEmpty {
             ZoneHeader(tr("On this Mac", "Trên máy này"), icon: "laptopcomputer")
         }
-        if let today = tokens.today {
+        if hasTokenData {
+            // After a break "today" can be empty while history isn't — show a
+            // zero placeholder so the cost history below still renders.
+            let today = tokens.today
+                ?? DayUsage(day: Calendar.current.startOfDay(for: Date()))
             CollapsibleSection(tr("Today", "Hôm nay"), key: "today",
                                trailing: "≈ $\(String(format: "%.2f", today.cost)) \(tr("if on API", "nếu xài API"))") {
                 CardBox { todayRows(today) }
             }
+        }
+        if !tokens.days.isEmpty {
+            costHistorySection
         }
         if !agents.agents.isEmpty {
             let working = agents.agents.filter(\.isBusy).count
@@ -288,45 +296,67 @@ struct PopoverView: View {
 
     @ViewBuilder
     private var sparklineSection: some View {
-        let cutoff = Date().addingTimeInterval(-24 * 3600)
-        let points = model.samples(forKeyID: model.selectedKey.id).filter { $0.t >= cutoff }
-        if points.count >= 3, points.contains(where: { $0.s != nil || $0.w != nil }) {
-            CollapsibleSection(tr("Last 24h", "24h qua"), key: "chart24h") {
+        let all = model.samples(forKeyID: model.selectedKey.id)
+        if all.contains(where: { $0.s != nil || $0.w != nil }) {
+            let cutoff = Date().addingTimeInterval(-model.limitsRange.seconds)
+            let points = all.filter { $0.t >= cutoff }
+            CollapsibleSection(tr("History", "Lịch sử"), key: "chart24h") {
                 CardBox {
+                RangePicker(range: $model.limitsRange)
                 HStack(spacing: 10) {
                     LegendDot(color: .green, label: "Session")
                     LegendDot(color: .blue, label: tr("Weekly", "Tuần"))
                     Spacer()
                 }
-                Chart(points) { sample in
-                    if let v = sample.s {
-                        LineMark(x: .value("Time", sample.t), y: .value("Pct", v),
-                                 series: .value("Series", "Session"))
-                            .foregroundStyle(.green)
-                            .interpolationMethod(.monotone)
+                if points.count >= 2 {
+                    Chart(points) { sample in
+                        if let v = sample.s {
+                            LineMark(x: .value("Time", sample.t), y: .value("Pct", v),
+                                     series: .value("Series", "Session"))
+                                .foregroundStyle(.green)
+                                .interpolationMethod(.monotone)
+                        }
+                        if let v = sample.w {
+                            LineMark(x: .value("Time", sample.t), y: .value("Pct", v),
+                                     series: .value("Series", "Weekly"))
+                                .foregroundStyle(.blue)
+                                .interpolationMethod(.monotone)
+                        }
                     }
-                    if let v = sample.w {
-                        LineMark(x: .value("Time", sample.t), y: .value("Pct", v),
-                                 series: .value("Series", "Weekly"))
-                            .foregroundStyle(.blue)
-                            .interpolationMethod(.monotone)
+                    .chartYScale(domain: 0...100)
+                    .chartXAxis { historyXAxis(model.limitsRange) }
+                    .chartYAxis {
+                        AxisMarks(values: [0, 50, 100]) {
+                            AxisGridLine()
+                            AxisValueLabel().font(.caption2)
+                        }
                     }
+                    .frame(height: 60)
+                } else {
+                    Text(tr("Not enough data for this range yet — it fills in as you use Claude.",
+                            "Chưa đủ dữ liệu cho khoảng này — sẽ đầy dần khi bạn dùng Claude."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(height: 60, alignment: .center)
                 }
-                .chartYScale(domain: 0...100)
-                .chartXAxis {
-                    AxisMarks(values: .stride(by: .hour, count: 6)) {
-                        AxisGridLine()
-                        AxisValueLabel(format: .dateTime.hour()).font(.caption2)
-                    }
                 }
-                .chartYAxis {
-                    AxisMarks(values: [0, 50, 100]) {
-                        AxisGridLine()
-                        AxisValueLabel().font(.caption2)
-                    }
-                }
-                .frame(height: 60)
-                }
+            }
+        }
+    }
+
+    /// X-axis ticks/labels matched to the given range.
+    private func historyXAxis(_ range: HistoryRange) -> some AxisContent {
+        let component: Calendar.Component = range == .day ? .hour : .day
+        let count = range == .day ? 6 : (range == .week ? 1 : 5)
+        return AxisMarks(values: .stride(by: component, count: count)) {
+            AxisGridLine()
+            if range == .day {
+                AxisValueLabel(format: .dateTime.hour()).font(.caption2)
+            } else if range == .week {
+                AxisValueLabel(format: .dateTime.weekday(.narrow)).font(.caption2)
+            } else {
+                AxisValueLabel(format: .dateTime.month(.defaultDigits).day()).font(.caption2)
             }
         }
     }
@@ -383,30 +413,44 @@ struct PopoverView: View {
                     }
                 }
             }
-            if tokens.days.count >= 2 {
-                Divider()
-                Chart(tokens.days) { day in
-                    BarMark(x: .value("Day", day.day, unit: .day),
-                            y: .value("Cost", day.cost))
-                        .foregroundStyle(Color.accentColor.opacity(0.7))
-                        .cornerRadius(2)
-                }
-                .chartXAxis {
-                    AxisMarks(values: .stride(by: .day)) {
-                        AxisValueLabel(format: .dateTime.weekday(.narrow)).font(.caption2)
+    }
+
+    /// Machine-zone cost history — its own section, mirroring the account
+    /// zone's "History" chart so both zones read "current + history".
+    @ViewBuilder
+    private var costHistorySection: some View {
+        let bars = tokens.bars(for: model.costRange)
+        CollapsibleSection(tr("Cost history", "Lịch sử chi phí"), key: "costHistory") {
+            CardBox {
+                RangePicker(range: $model.costRange)
+                if bars.contains(where: { $0.cost > 0 }) {
+                    Chart(bars) { bucket in
+                        BarMark(x: .value("Time", bucket.day,
+                                          unit: model.costRange == .day ? .hour : .day),
+                                y: .value("Cost", bucket.cost))
+                            .foregroundStyle(Color.accentColor.opacity(0.7))
+                            .cornerRadius(2)
                     }
-                }
-                .chartYAxis {
-                    AxisMarks(values: .automatic(desiredCount: 2)) {
-                        AxisGridLine()
-                        AxisValueLabel().font(.caption2)
+                    .chartXAxis { historyXAxis(model.costRange) }
+                    .chartYAxis {
+                        AxisMarks(values: .automatic(desiredCount: 2)) {
+                            AxisGridLine()
+                            AxisValueLabel().font(.caption2)
+                        }
                     }
+                    .frame(height: 44)
+                    Text("\(tr(model.costRange.label(true), model.costRange.label(false))) ≈ $\(String(format: "%.2f", tokens.cost(for: model.costRange)))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(tr("No Claude Code usage in this range.",
+                            "Không có hoạt động Claude Code trong khoảng này."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(height: 44, alignment: .center)
                 }
-                .frame(height: 44)
-                Text("\(tr("7 days", "7 ngày")) ≈ $\(String(format: "%.2f", tokens.weekCost))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
+        }
     }
 
     private func extraUsageRow(_ extra: ExtraUsage, primary: Bool) -> some View {
@@ -757,6 +801,21 @@ struct ZoneHeader: View {
                 .frame(height: 1)
         }
         .padding(.top, 2)
+    }
+}
+
+/// Compact 24h / 7d / 30d switch shared by both history charts.
+struct RangePicker: View {
+    @Binding var range: HistoryRange
+    var body: some View {
+        Picker("", selection: $range) {
+            ForEach(HistoryRange.allCases) { r in
+                Text(tr(r.label(true), r.label(false))).tag(r)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .controlSize(.small)
     }
 }
 

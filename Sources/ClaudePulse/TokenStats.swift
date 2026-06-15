@@ -28,19 +28,21 @@ struct DayUsage: Identifiable {
 /// transcripts (~/.claude/projects/**/*.jsonl). Read-only; nothing leaves the machine.
 @MainActor
 final class TokenStats: ObservableObject {
-    @Published var days: [DayUsage] = []  // last 7 days, ascending
+    @Published var days: [DayUsage] = []   // last 30 days, ascending
+    @Published var hours: [DayUsage] = []  // last 48h, hourly, ascending
 
     private var timerTask: Task<Void, Never>?
     private var state = ParseState()
 
     /// Incremental-parse progress carried between reloads: how far each
     /// transcript has been read, which entries were already counted, and the
-    /// running per-day totals. Transcripts are append-only, so a reload only
-    /// reads bytes written since the previous one.
+    /// running per-day / per-hour totals. Transcripts are append-only, so a
+    /// reload only reads bytes written since the previous one.
     struct ParseState {
         var offsets: [String: UInt64] = [:]
         var seen = Set<String>()
         var byDay: [Date: DayUsage] = [:]
+        var byHour: [Date: DayUsage] = [:]
     }
 
     init() {
@@ -57,15 +59,26 @@ final class TokenStats: ObservableObject {
         return last
     }
 
-    var weekCost: Double { days.reduce(0) { $0 + $1.cost } }
+    /// Bars + total cost for the selected range. A day window uses hourly
+    /// buckets; week/month use daily buckets.
+    func bars(for range: HistoryRange) -> [DayUsage] {
+        let cutoff = Date().addingTimeInterval(-range.seconds)
+        let source = range == .day ? hours : days
+        return source.filter { $0.day >= cutoff }
+    }
+
+    func cost(for range: HistoryRange) -> Double {
+        bars(for: range).reduce(0) { $0 + $1.cost }
+    }
 
     func reload() async {
         let started = Date()
         let snapshot = state
         let updated = await Task.detached(priority: .utility) { Self.compute(from: snapshot) }.value
         state = updated
-        let weekStart = Calendar.current.startOfDay(for: Date().addingTimeInterval(-6 * 86400))
-        days = updated.byDay.values.filter { $0.day >= weekStart }.sorted { $0.day < $1.day }
+        let dayStart = Calendar.current.startOfDay(for: Date().addingTimeInterval(-29 * 86400))
+        days = updated.byDay.values.filter { $0.day >= dayStart }.sorted { $0.day < $1.day }
+        hours = updated.byHour.values.sorted { $0.day < $1.day }
         let elapsed = String(format: "%.2f", Date().timeIntervalSince(started))
         AppLog.write("token stats: \(days.count) days, parsed in \(elapsed)s")
     }
@@ -74,10 +87,12 @@ final class TokenStats: ObservableObject {
         var state = previous
         let projectsDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/projects")
-        let cutoff = Date().addingTimeInterval(-8 * 86400)
+        let cutoff = Date().addingTimeInterval(-31 * 86400)
+        let hourCutoff = Date().addingTimeInterval(-48 * 3600)
 
-        // Roll days that left the window off the running totals.
+        // Roll buckets that left their window off the running totals.
         state.byDay = state.byDay.filter { $0.key > cutoff }
+        state.byHour = state.byHour.filter { $0.key > hourCutoff }
 
         var files: [(url: URL, size: UInt64)] = []
         if let enumerator = FileManager.default.enumerator(
@@ -134,8 +149,6 @@ final class TokenStats: ObservableObject {
                       let date = isoFrac.date(from: timestamp) ?? isoPlain.date(from: timestamp),
                       date > cutoff else { continue }
 
-                let day = calendar.startOfDay(for: date)
-                var stats = state.byDay[day] ?? DayUsage(day: day)
                 let input = usage["input_tokens"] as? Int ?? 0
                 let output = usage["output_tokens"] as? Int ?? 0
                 let cacheRead = usage["cache_read_input_tokens"] as? Int ?? 0
@@ -143,21 +156,38 @@ final class TokenStats: ObservableObject {
                 let model = message["model"] as? String ?? ""
                 let entryCost = Pricing.cost(model: model, input: input, output: output,
                                              cacheRead: cacheRead, cacheWrite: cacheWrite)
-                stats.input += input
-                stats.output += output
-                stats.cacheRead += cacheRead
-                stats.cacheWrite += cacheWrite
-                stats.cost += entryCost
                 // "<synthetic>" marks locally-generated messages (errors,
                 // system notices) — not real API calls; skip in the breakdown.
-                if !model.isEmpty, !model.hasPrefix("<") {
-                    let name = Pricing.displayName(model)
-                    var share = stats.models[name] ?? ModelShare(name: name)
-                    share.tokens += input + output + cacheRead + cacheWrite
-                    share.cost += entryCost
-                    stats.models[name] = share
+                let modelName = (!model.isEmpty && !model.hasPrefix("<"))
+                    ? Pricing.displayName(model) : nil
+
+                func apply(to stats: inout DayUsage) {
+                    stats.input += input
+                    stats.output += output
+                    stats.cacheRead += cacheRead
+                    stats.cacheWrite += cacheWrite
+                    stats.cost += entryCost
+                    if let modelName {
+                        var share = stats.models[modelName] ?? ModelShare(name: modelName)
+                        share.tokens += input + output + cacheRead + cacheWrite
+                        share.cost += entryCost
+                        stats.models[modelName] = share
+                    }
                 }
-                state.byDay[day] = stats
+
+                let day = calendar.startOfDay(for: date)
+                var dayStats = state.byDay[day] ?? DayUsage(day: day)
+                apply(to: &dayStats)
+                state.byDay[day] = dayStats
+
+                // Hourly bucket too, for the 24h view (recent entries only).
+                if date >= hourCutoff,
+                   let hour = calendar.date(from:
+                        calendar.dateComponents([.year, .month, .day, .hour], from: date)) {
+                    var hourStats = state.byHour[hour] ?? DayUsage(day: hour)
+                    apply(to: &hourStats)
+                    state.byHour[hour] = hourStats
+                }
             }
         }
 
