@@ -14,7 +14,7 @@ macOS menu bar app theo dõi liên tục usage limits của Claude — hỗ tr�
 
 - **Limits**: progress bar từng hạng mục — gói cá nhân: Current session, Weekly · All models, Weekly · Sonnet/Opus; gói Enterprise: Hạn mức chi tiêu ($ đã dùng / hạn mức), Claude Design allowance — đổi màu theo mức dùng, kèm giờ reset
 - **Bố cục 2 vùng**: vùng **Tài khoản** (Giới hạn + Lịch sử, đổi theo tab đang chọn) và vùng **Trên máy này** (Hôm nay + Lịch sử chi phí + Agent, chung cho cả máy) — mỗi vùng đọc cùng nhịp "hiện tại + lịch sử", tách bạch rõ cái gì thuộc tài khoản, cái gì thuộc máy
-- **Nhiều tài khoản (không giới hạn)**: token Claude Code + Sign in bao nhiêu tài khoản cũng được (vd cá nhân Max + Enterprise công ty + tài khoản phụ) — mỗi tài khoản một tab **tự đặt tên theo gói thật** (Max/Pro/Enterprise), email · gói hiện ngay dưới thanh tab, tab trùng tài khoản tự gộp; ≤3 tab dạng nút, nhiều hơn thành menu chọn
+- **Nhiều tài khoản (không giới hạn)**: token Claude Code + Sign in bao nhiêu tài khoản cũng được (vd cá nhân Max + Enterprise công ty + tài khoản phụ) — mỗi tài khoản một tab **tự đặt tên theo gói thật** (Max/Pro/Enterprise), email · gói hiện ngay dưới thanh tab, tab trùng tài khoản tự gộp; ≤3 tab dạng nút, nhiều hơn thành menu chọn. Phiên đăng nhập hết hạn thì có nút **Đăng nhập lại** ngay tại chỗ, đăng nhập xong làm mới đúng tab cũ (không tạo tab trùng)
 - **Burn rate + dự báo**: tốc độ tiêu %/giờ và dự đoán có chạm 100% trước giờ reset không — bật được dự báo ra menu bar (`40% ~46%`)
 - **Lịch sử (chọn 24h / 7 ngày / 30 ngày)**: biểu đồ session + weekly theo thời gian, riêng từng tài khoản — đổi khoảng để xem trong ngày hay xu hướng cả tháng
 - **Agents running**: các AI coding agent đang chạy trên máy (Claude Code, Codex, Gemini CLI, Aider) kèm thư mục dự án và trạng thái working/idle
@@ -59,7 +59,7 @@ Chi tiết:
 
 ```bash
 git clone https://github.com/MXVUX/ClaudePulse.git && cd ClaudePulse
-./scripts/build_dmg.sh 2.5.0   # → dist/ClaudePulse.dmg (universal: Apple Silicon + Intel)
+./scripts/build_dmg.sh 2.6.0   # → dist/ClaudePulse.dmg (universal: Apple Silicon + Intel)
 ```
 
 Yêu cầu Xcode 16+ / Swift 6. Script tự ký bằng identity `ClaudeBar Signing` nếu có trong Keychain (tên cert giữ nguyên từ thời tên cũ — đổi cert sẽ làm các bản đã phát hành từ chối update vì signature pinning), không thì ký ad-hoc.

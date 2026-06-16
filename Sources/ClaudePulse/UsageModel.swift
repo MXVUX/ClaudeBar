@@ -109,12 +109,16 @@ final class UsageModel: ObservableObject {
     @Published var pendingAuthFlow: ClaudeAuth.PendingFlow?
     @Published var pendingAuthCode = ""
     @Published var hasClaudeCodeAccount = KeychainTokenProvider.itemExists()
+    /// True when the selected account's sign-in expired — the UI shows a
+    /// re-sign-in button instead of just the error text.
+    @Published var selectedNeedsReauth = false
     @Published var selectedKey: AccountKey = .claudeCode {
         didSet {
             guard oldValue != selectedKey else { return }
             UserDefaults.standard.set(selectedKey.id, forKey: "selectedAccount")
             showCachedUsage()
             errorMessage = nil
+            selectedNeedsReauth = false
             Task { await self.refresh() }
         }
     }
@@ -256,10 +260,34 @@ final class UsageModel: ObservableObject {
         }
     }
 
-    func addProfile(credentials: OwnCredentials) {
-        let profile = Profile(id: UUID().uuidString, label: "", credentials: credentials)
+    /// Store credentials from a completed sign-in. Signing into an account
+    /// that already has a tab (same org UUID) refreshes that tab in place
+    /// instead of creating a duplicate — which also fixes an expired account.
+    func addProfile(credentials: OwnCredentials) async {
+        let identity = try? await ClaudeAuth.fetchIdentity(token: credentials.accessToken)
+        if let uuid = identity?.orgUUID,
+           let index = profiles.firstIndex(where: { $0.orgUUID == uuid }) {
+            profiles[index].credentials = credentials
+            if let identity {
+                profiles[index].email = identity.email
+                profiles[index].orgName = identity.orgName
+                profiles[index].orgType = identity.orgType
+            }
+            errorMessage = nil
+            selectedNeedsReauth = false
+            selectedKey = .profile(profiles[index].id)
+            identityVersion += 1
+            AppLog.write("profile \(profiles[index].id) re-authenticated")
+            return
+        }
+        var profile = Profile(id: UUID().uuidString, label: "", credentials: credentials)
+        profile.email = identity?.email
+        profile.orgName = identity?.orgName
+        profile.orgType = identity?.orgType
+        profile.orgUUID = identity?.orgUUID
         profiles.append(profile)
         selectedKey = .profile(profile.id)
+        AppLog.write("profile added")
     }
 
     func removeProfile(_ pid: String) {
@@ -534,6 +562,7 @@ final class UsageModel: ObservableObject {
                 usage = fresh
                 lastUpdated = Date()
                 errorMessage = nil
+                selectedNeedsReauth = false
             }
 
             history.append(key: key.id,
@@ -550,7 +579,12 @@ final class UsageModel: ObservableObject {
             AppLog.write("fetch ok [\(key.id)]: session=\(fresh.fiveHour?.utilization ?? -1) weekly=\(fresh.sevenDay?.utilization ?? -1) spend=\(fresh.extraUsage?.usedCredits ?? -1)")
         } catch {
             let msg = (error as? UsageError)?.text ?? error.localizedDescription
-            if key == selectedKey { errorMessage = msg }
+            var reauth = false
+            if case .reauth = (error as? UsageError) { reauth = true }
+            if key == selectedKey {
+                errorMessage = msg
+                selectedNeedsReauth = reauth
+            }
             // A denied Keychain prompt would otherwise re-prompt every poll —
             // back off; the manual refresh button still tries immediately.
             if msg.contains("Always Allow") {
@@ -567,8 +601,8 @@ final class UsageModel: ObservableObject {
         switch key {
         case .profile(let pid):
             guard let index = profiles.firstIndex(where: { $0.id == pid }) else {
-                throw UsageError.message(tr("Signed out — sign in again in Settings",
-                                            "Đã đăng xuất — đăng nhập lại trong Cài đặt"))
+                throw UsageError.reauth(tr("Signed out — sign in again",
+                                           "Đã đăng xuất — đăng nhập lại"))
             }
             var credentials = profiles[index].credentials
             if credentials.expiresAt < Date().addingTimeInterval(120) {
@@ -577,8 +611,8 @@ final class UsageModel: ObservableObject {
                     profiles[index].credentials = credentials  // didSet persists
                     AppLog.write("profile \(pid) token refreshed")
                 } catch {
-                    throw UsageError.message(tr("Sign-in expired — sign in again in Settings",
-                                                "Phiên đăng nhập hết hạn — đăng nhập lại trong Cài đặt"))
+                    throw UsageError.reauth(tr("Sign-in expired — sign in again",
+                                               "Phiên đăng nhập hết hạn — đăng nhập lại"))
                 }
             }
             if key == selectedKey {
@@ -643,8 +677,13 @@ final class UsageModel: ObservableObject {
 
 enum UsageError: Error {
     case message(String)
+    /// A signed-in account whose token can't be refreshed — the user must
+    /// sign in again. Distinct so the UI can offer a re-sign-in button.
+    case reauth(String)
     var text: String {
-        switch self { case .message(let m): return m }
+        switch self {
+        case .message(let m), .reauth(let m): return m
+        }
     }
 }
 

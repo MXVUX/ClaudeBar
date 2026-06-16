@@ -290,6 +290,19 @@ struct PopoverView: View {
                     .foregroundStyle(.orange)
                     .font(.caption)
                     .fixedSize(horizontal: false, vertical: true)
+                if model.selectedNeedsReauth {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.15)) { showingSettings = true }
+                        let flow = ClaudeAuth.beginFlow()
+                        model.pendingAuthFlow = flow
+                        NSWorkspace.shared.open(flow.url)
+                    } label: {
+                        Label(tr("Sign in again…", "Đăng nhập lại…"),
+                              systemImage: "person.crop.circle.badge.plus")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
             }
         }
     }
@@ -657,12 +670,15 @@ struct SettingsView: View {
             }
             // Every signed-in account, each with its own sign-out.
             ForEach(model.profiles) { profile in
+                let expired = model.selectedNeedsReauth
+                    && model.selectedKey == .profile(profile.id)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack {
                         Label(model.label(for: .profile(profile.id)),
-                              systemImage: "checkmark.circle.fill")
+                              systemImage: expired ? "exclamationmark.triangle.fill"
+                                                   : "checkmark.circle.fill")
                             .font(.callout)
-                            .foregroundStyle(.green)
+                            .foregroundStyle(expired ? .orange : .green)
                         Spacer()
                         Button {
                             model.removeProfile(profile.id)
@@ -680,6 +696,12 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
+                    }
+                    if expired {
+                        Button(tr("Sign in again…", "Đăng nhập lại…")) { startSignIn() }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                            .padding(.top, 2)
                     }
                 }
             }
@@ -731,9 +753,7 @@ struct SettingsView: View {
                 }
             } else {
                 Button {
-                    let flow = ClaudeAuth.beginFlow()
-                    model.pendingAuthFlow = flow
-                    NSWorkspace.shared.open(flow.url)
+                    startSignIn()
                 } label: {
                     Label(model.profiles.isEmpty
                           ? tr("Sign in with Claude…", "Đăng nhập với Claude…")
@@ -749,6 +769,12 @@ struct SettingsView: View {
         }
     }
 
+    private func startSignIn() {
+        let flow = ClaudeAuth.beginFlow()
+        model.pendingAuthFlow = flow
+        NSWorkspace.shared.open(flow.url)
+    }
+
     private func confirmSignIn(_ flow: ClaudeAuth.PendingFlow) {
         authBusy = true
         authError = nil
@@ -757,8 +783,7 @@ struct SettingsView: View {
                 let credentials = try await ClaudeAuth.exchange(pasted: model.pendingAuthCode, flow: flow)
                 model.pendingAuthFlow = nil
                 model.pendingAuthCode = ""
-                model.addProfile(credentials: credentials)
-                AppLog.write("profile added")
+                await model.addProfile(credentials: credentials)
                 await model.refresh()
             } catch {
                 authError = (error as? UsageError)?.text ?? error.localizedDescription
